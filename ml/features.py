@@ -81,9 +81,12 @@ def puzzle_features(puzzle: Puzzle) -> dict[str, float]:
 def cell_features(puzzle: Puzzle) -> dict[Cell, dict[str, float]]:
     """Features for every cell on the solution path, keyed by (row, col).
 
-    - dist_to_next_dot: path steps from this cell to the next dot after it (0 past the last dot).
-    - segment_len: path steps between the dots on either side of the cell (the cell's "leg").
-      Cells after the last dot count as their own leg back to it, and are 0 if there are none.
+    - dist_to_next_dot: path steps from this cell to the next dot after it.
+    - segment_len: path steps between the dot at or before the cell and the next dot after it
+      (the cell's "leg"; a dot starts its own leg).
+    - Cells at or after the last dot have no next dot, so no leg: dist_to_next_dot and
+      segment_len are both 0. The generator always ends the path on the last dot, so in real
+      puzzles this is only the final cell; hand-built boards can have trailing cells too.
     - path_frac: position along the solution, 0 at the start and 1 at the end.
     """
     path = _solution(puzzle)

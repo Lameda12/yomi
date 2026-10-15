@@ -58,6 +58,16 @@ class CellFeatureTests(unittest.TestCase):
         self.assertEqual(cells[(1, 1)]["is_edge"], 0.0)
         self.assertEqual(cells[(3, 1)]["path_frac"], 1.0)
 
+    def test_cells_at_or_after_last_dot_have_no_leg(self) -> None:
+        # 2x2 board, path (0,0) (0,1) (1,1) (1,0); dots only on the first two cells,
+        # so (0,1) is the last dot and (1,1), (1,0) trail after it.
+        p = {"id": "trailing", "n": 2, "dots": [[0, 0, 1], [0, 1, 2]],
+             "solution": [[0, 0], [0, 1], [1, 1], [1, 0]]}
+        cells = cell_features(p)
+        self.assertEqual((cells[(0, 0)]["dist_to_next_dot"], cells[(0, 0)]["segment_len"]), (1.0, 1.0))
+        for cell in [(0, 1), (1, 1), (1, 0)]:
+            self.assertEqual((cells[cell]["dist_to_next_dot"], cells[cell]["segment_len"]), (0.0, 0.0), cell)
+
     def test_ranges(self) -> None:
         for p in PUZZLES:
             for feats in cell_features(p).values():
