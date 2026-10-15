@@ -58,9 +58,12 @@ def _is_turn(path: list[Cell], i: int) -> bool:
 
 
 def solver_steps(puzzle: Puzzle) -> int:
-    """Search steps of the uniqueness solver (cap=2, default budget).
+    """Search steps of the uniqueness solver (cap=2, default budget of 300_000 steps).
 
-    If the budget runs out the solver reports budget + 1, so this is capped, never missing.
+    Budget-exhausted sentinel: if the search runs out of budget the solver stops and this
+    returns budget + 1 (300_001), not the true effort. Such a value is a censored lower bound
+    and looks like a real step count, so a model fitted on it treats it as a measured value.
+    Not handled yet; see the open question for Sprint 2 task 4.
     """
     dots = {(r, c): label for r, c, label in puzzle["dots"]}
     steps: list[int] = []
