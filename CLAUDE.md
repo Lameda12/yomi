@@ -6,7 +6,24 @@ Yomi is a daily Zip-style path puzzle. Before each solve, an ML model predicts t
 
 Owner: Andi. Works 1 to 2 hours a day. Ship small and working before polished.
 
+## Pitch (use this for any copy, demo, or README text)
+
+Formula: **Hook → Fix → Proof.** Gen Z voice: casual, punchy, a bit of slang, never cringe, never fake.
+
+- **Hook:** You thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that before you start. 👀
+- **Fix:** Zip-style path puzzle + an ML model that predicts your time and your 3 stuck spots before you play. You try to beat it. Result card shows predicted vs actual. The model learns from every solve.
+- **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, 26 ml tests passing.
+
+Honesty rules for copy (these override hype):
+- The time model is still on the solver-effort fallback. Its output is solver steps, not ms. Say "predicts how hard it'll be" until the human-time path runs on 30+ real solves.
+- Only 5 solves from 1 player so far. Don't claim accuracy, sample size, or user numbers beyond that.
+- Never invent metrics, users, or testimonials.
+
+Full pitch and sprint status: `README.md`.
+
 ## Current sprint: Sprint 2 (Oct 15 to 22)
+
+Sprint status, what's done, and what's next: see `README.md` (kept in sync with the checklist below).
 
 Definition of Ready: Yomi is live with 100+ real solves and no duplicates. Before each solve, the model predicts the player's time and stuck point. The result card shows predicted vs actual. First evaluation numbers against baselines exist, even if they're not at target yet.
 
