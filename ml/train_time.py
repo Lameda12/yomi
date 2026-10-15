@@ -33,6 +33,10 @@ SHRINK_K = 3  # player offset is shrunk by n / (n + SHRINK_K)
 DEFAULT_ALPHA = 1.0  # ridge penalty on standardized features; not tuned (evaluation is task 6)
 LABEL_HUMAN = "human_time"
 LABEL_SOLVER = "solver_effort"
+# Rows 1-8 of data/solves.jsonl (ids 1-8, 2026-10-15 05:18-05:21 UTC): the owner's own test
+# plays before the solve_id dedupe landed. Kept in the data, excluded from training. Rows are
+# not deleted, so this list can be emptied later without losing anything.
+EXCLUDED_ROW_IDS = frozenset(str(i) for i in range(1, 9))
 
 # One completed human solve: (player_id, puzzle_id, solve_ms).
 Solve = tuple[str, str, float]
@@ -89,23 +93,26 @@ def _std(values: np.ndarray) -> float:
 
 # ---------- data --------------------------------------------------------------
 
-def solves_from_frame(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] = ()) -> list[Solve]:
+def solves_from_frame(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] = (),
+                      exclude_ids: Iterable[str] = EXCLUDED_ROW_IDS) -> list[Solve]:
     """Keep completed solves from real humans. `df` is what analysis.load_solves returns.
 
     The schema has no "test row" marker, so test and fake rows are dropped by player id
-    (`exclude_players`); delete fake rows from the database after a test, as CLAUDE.md says.
+    (`exclude_players`) or by row id (`exclude_ids`, see EXCLUDED_ROW_IDS). Delete fake rows
+    from the database after a test, as CLAUDE.md says.
     Rows that cannot be a real timed solve (no time, unknown puzzle) are dropped too.
     """
     if df is None or len(df) == 0:
         return []
     excluded = set(exclude_players)
+    excluded_ids = set(map(str, exclude_ids))
     out: list[Solve] = []
     for row in df.to_dict("records"):
         ms = row.get("solve_ms")
         if not row.get("completed") or ms is None or not math.isfinite(float(ms)) or float(ms) <= 0:
             continue
         pid, puzzle = str(row["player_id"]), str(row["puzzle_id"])
-        if pid in excluded or puzzle not in puzzle_ids:
+        if pid in excluded or str(row.get("id")) in excluded_ids or puzzle not in puzzle_ids:
             continue
         out.append((pid, puzzle, float(ms)))
     return out

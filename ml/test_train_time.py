@@ -109,6 +109,17 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(solves_from_frame(df, set(PUZZLE_IDS), ["fake"]), [("a", pid, 9000.0)])
         self.assertEqual(solves_from_frame(pd.DataFrame(), set(PUZZLE_IDS)), [])
 
+    def test_excludes_by_row_id(self) -> None:
+        import pandas as pd
+
+        pid = PUZZLE_IDS[0]
+        df = pd.DataFrame([
+            {"id": 1, "player_id": "a", "puzzle_id": pid, "solve_ms": 9000, "completed": True},  # test row
+            {"id": 9, "player_id": "a", "puzzle_id": pid, "solve_ms": 7000, "completed": True},
+        ])
+        self.assertEqual(solves_from_frame(df, set(PUZZLE_IDS), [], ["1"]), [("a", pid, 7000.0)])
+        self.assertEqual(len(solves_from_frame(df, set(PUZZLE_IDS), [], [])), 2)
+
 
 class ExportTests(unittest.TestCase):
     def test_round_trip_has_every_contract_key_in_order(self) -> None:
