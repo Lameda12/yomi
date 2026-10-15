@@ -34,7 +34,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 
 ### Parked / blocked ⏸️
 - **Deploy (Vercel + Neon, live URL):** waiting on Alamedin.
-- **Stuck-point model:** needs real solves with pause data. Code can ship first; the fit skips below 30 labeled solves.
+- **Stuck-point model:** code shipped (`ml/train_stuck.py`, logistic per cell, top 3). The fit skips below 30 labeled solves, so there are no stuck coefficients yet. Needs real solves with pause data.
 - **Evaluation + `reports/sprint2_model.md`:** needs data.
 - **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
 
@@ -58,7 +58,7 @@ npm test               # game + store tests
 # ml
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m ml.train_time --source jsonl   # retrain the time model from data/solves.jsonl
+python -m ml.train_time --source jsonl   # retrain time + stuck models from data/solves.jsonl
 python -m unittest discover -s ml -p "test_*.py" -t .
 ```
 

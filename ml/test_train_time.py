@@ -138,7 +138,7 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(list(data["time"]["coef"]), PUZZLE_FEATURES)  # same order as puzzle_features
         self.assertEqual(data["players"], model.players)
         self.assertEqual(list(data["stuck"]), ["intercept", "coef"])
-        self.assertEqual(data["stuck"]["coef"], {})  # untrained until Sprint 2 task 5
+        self.assertEqual(data["stuck"]["coef"], {})  # no stuck model passed = empty block
 
     def test_label_is_one_of_the_contract_values(self) -> None:
         for n in (0, MIN_HUMAN_SOLVES):

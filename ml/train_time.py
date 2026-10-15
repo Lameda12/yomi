@@ -118,15 +118,18 @@ def solves_from_frame(df: Any, puzzle_ids: set[str], exclude_players: Iterable[s
     return out
 
 
-def load_training_solves(source: str, puzzle_ids: set[str], exclude_players: Iterable[str] = ()) -> list[Solve]:
+def load_frame(source: str) -> Any:
     """Same switch as analysis.py: Neon if DATABASE_URL is set, else data/solves.jsonl."""
     import analysis  # reuse its loader and its solve_id dedupe
 
     if source == "auto":
         source = "neon" if analysis.database_url() else "jsonl"
-    log(f"[train_time] reading solves from {source}")
-    df = analysis.load_solves(source, ROOT / "data" / "solves.csv")
-    return solves_from_frame(df, puzzle_ids, exclude_players)
+    log(f"[ml] reading solves from {source}")
+    return analysis.load_solves(source, ROOT / "data" / "solves.csv")
+
+
+def load_training_solves(source: str, puzzle_ids: set[str], exclude_players: Iterable[str] = ()) -> list[Solve]:
+    return solves_from_frame(load_frame(source), puzzle_ids, exclude_players)
 
 
 # ---------- training ----------------------------------------------------------
@@ -167,11 +170,16 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=None, help="model.json path (default web/public/model.json)")
     args = ap.parse_args()
 
+    from ml import train_stuck
     from ml.export import MODEL_JSON, write_model_json
 
     puzzles = load_puzzles()
-    solves = load_training_solves(args.source, {p["id"] for p in puzzles}, args.exclude_player)
+    df = load_frame(args.source)
+    solves = solves_from_frame(df, {p["id"] for p in puzzles}, args.exclude_player)
     model = train(solves, puzzles, args.alpha)
+    # Refit the stuck model from the same rows so one run writes a consistent model.json.
+    stuck = train_stuck.train(
+        train_stuck.labeled_solves_from_frame(df, {p["id"]: p for p in puzzles}, args.exclude_player), puzzles)
 
     n_players = len({p for p, _, _ in solves})
     print(f"human solves (completed): {model.human_solves} from {n_players} player(s)")
@@ -185,7 +193,10 @@ def main() -> int:
     if model.players:
         print(f"player offsets: {len(model.players)}")
 
-    path = write_model_json(model, args.out or MODEL_JSON)
+    print(f"stuck model: {'fitted' if stuck.fitted else 'skipped'} on {stuck.labeled_solves} labeled solve(s)"
+          + ("" if stuck.fitted else f" (needs {train_stuck.MIN_LABELED_SOLVES}; no stuck coefficients written)"))
+
+    path = write_model_json(model, args.out or MODEL_JSON, stuck=stuck)
     print(f"wrote {path}")
     return 0
 

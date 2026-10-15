@@ -10,14 +10,25 @@ from pathlib import Path
 from typing import Any
 
 from ml.features import CELL_FEATURES, PUZZLE_FEATURES
+from ml.train_stuck import StuckModel
 from ml.train_time import TimeModel
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_JSON = ROOT / "web" / "public" / "model.json"
 
 
-def build_model_json(time: TimeModel, version: str | None = None) -> dict[str, Any]:
-    """The contract object. `time` is the fitted solve-time model."""
+def stuck_block(stuck: StuckModel | None) -> dict[str, Any]:
+    """Unfitted (or missing) stuck model = intercept 0 and an empty coef, which predict.ts reads as
+    "no stuck prediction" (not as all-zero scores)."""
+    if stuck is None or not stuck.fitted:
+        return {"intercept": 0.0, "coef": {}}
+    if list(stuck.coef) != CELL_FEATURES:
+        raise ValueError(f"stuck coef keys {list(stuck.coef)} must match cell_features {CELL_FEATURES}, in order")
+    return {"intercept": stuck.intercept, "coef": stuck.coef}
+
+
+def build_model_json(time: TimeModel, version: str | None = None, stuck: StuckModel | None = None) -> dict[str, Any]:
+    """The contract object. `time` is the fitted solve-time model, `stuck` the stuck-point model."""
     if list(time.coef) != PUZZLE_FEATURES:
         raise ValueError(f"coef keys {list(time.coef)} must match puzzle_features {PUZZLE_FEATURES}, in order")
     if version is None:
@@ -29,13 +40,20 @@ def build_model_json(time: TimeModel, version: str | None = None) -> dict[str, A
         "time": {"intercept": time.intercept, "coef": time.coef, "residual_std": time.residual_std},
         "players": time.players,
         "cell_features": CELL_FEATURES,
-        # Sprint 2 task 5 fills this in. Until then the stuck model is untrained: intercept 0 and an
-        # empty coef, which predict.ts must read as "no stuck prediction" (not as all-zero scores).
-        "stuck": {"intercept": 0.0, "coef": {}},
+        "stuck": stuck_block(stuck),
     }
 
 
-def write_model_json(time: TimeModel, path: Path = MODEL_JSON, version: str | None = None) -> Path:
+def write_model_json(time: TimeModel, path: Path = MODEL_JSON, version: str | None = None,
+                     stuck: StuckModel | None = None) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(build_model_json(time, version), indent=2) + "\n")
+    path.write_text(json.dumps(build_model_json(time, version, stuck), indent=2) + "\n")
+    return path
+
+
+def set_stuck_block(stuck: StuckModel, path: Path = MODEL_JSON) -> Path:
+    """Replace only the stuck block of an existing model.json (the time block is left as is)."""
+    data = json.loads(path.read_text())
+    data["stuck"] = stuck_block(stuck)
+    path.write_text(json.dumps(data, indent=2) + "\n")
     return path
