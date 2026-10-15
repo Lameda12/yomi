@@ -75,4 +75,4 @@ Anonymous only. Players get a random ID stored in their browser. No names, email
 
 ---
 
-Owner: Alamedi Sabit ([@Lameda12](https://github.com/Lameda12))
+Owner: Alamedin Sabit ([@Lameda12](https://github.com/Lameda12))
