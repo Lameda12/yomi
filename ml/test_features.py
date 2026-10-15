@@ -1,7 +1,9 @@
 """Run from the repo root: .venv/bin/python -m unittest ml.test_features"""
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 from ml.features import (
     CELL_FEATURES,
@@ -12,6 +14,8 @@ from ml.features import (
 )
 
 PUZZLES = load_puzzles()
+TEST_VECTORS = Path(__file__).resolve().parent / "test_vectors.json"
+TOL = 1e-6
 
 
 class PuzzleFeatureTests(unittest.TestCase):
@@ -61,6 +65,39 @@ class CellFeatureTests(unittest.TestCase):
                 self.assertTrue(feats["dist_to_next_dot"] <= feats["segment_len"])
                 for k in ("is_edge", "is_corner", "is_turn"):
                     self.assertIn(feats[k], (0.0, 1.0))
+
+
+class TestVectorTests(unittest.TestCase):
+    """ml/test_vectors.json is the cross-language contract for the TypeScript port."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.data = json.loads(TEST_VECTORS.read_text())
+
+    def test_header_matches_contract(self) -> None:
+        self.assertEqual(self.data["puzzle_features"], PUZZLE_FEATURES)
+        self.assertEqual(self.data["cell_features"], CELL_FEATURES)
+        self.assertEqual(len(self.data["vectors"]), 5)
+
+    def test_expected_features_match_recomputed(self) -> None:
+        by_id = {p["id"]: p for p in PUZZLES}
+        for v in self.data["vectors"]:
+            p = by_id[v["id"]]
+            self.assertEqual(v["dots"], p["dots"], v["id"])
+            self.assertEqual(v["solution"], p["solution"], v["id"])
+
+            got = puzzle_features(p)
+            self.assertEqual(list(v["puzzle_features"]), PUZZLE_FEATURES, v["id"])
+            for k in PUZZLE_FEATURES:
+                self.assertAlmostEqual(v["puzzle_features"][k], got[k], delta=TOL, msg=f"{v['id']} {k}")
+
+            cells = cell_features(p)
+            self.assertEqual([tuple(c["cell"]) for c in v["cells"]], [tuple(c) for c in p["solution"]], v["id"])
+            for entry in v["cells"]:
+                cell = tuple(entry["cell"])
+                self.assertEqual(list(entry["features"]), CELL_FEATURES, f"{v['id']} {cell}")
+                for k in CELL_FEATURES:
+                    self.assertAlmostEqual(entry["features"][k], cells[cell][k], delta=TOL, msg=f"{v['id']} {cell} {k}")
 
 
 if __name__ == "__main__":
