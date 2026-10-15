@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getSql } from "@/lib/db";
+import { fileSolves } from "@/lib/store";
 
 const COLUMNS = [
   "id", "created_at", "player_id", "puzzle_id", "grid_size", "n_dots", "device", "started_at_ms",
@@ -7,6 +8,11 @@ const COLUMNS = [
   "played_zip_before",
 ] as const;
 const PAGE = 500;
+const CSV_HEADERS = {
+  "content-type": "text/csv; charset=utf-8",
+  "content-disposition": 'attachment; filename="yomi_solves.csv"',
+  "cache-control": "no-store",
+};
 
 // Hash both sides so the comparison is constant-time even when lengths differ.
 const digest = (s: string) => createHash("sha256").update(s).digest();
@@ -19,13 +25,19 @@ function csvCell(v: unknown): string {
 
 export async function GET(request: Request) {
   const admin = process.env.ADMIN_TOKEN;
+  const sql = getSql();
+  // Local demo (no Neon, no token, not production): the data is a file on this machine anyway.
+  const localOpen = !admin && !sql && process.env.NODE_ENV !== "production";
   const token = new URL(request.url).searchParams.get("token") ?? "";
-  if (!admin || !timingSafeEqual(digest(token), digest(admin))) {
+  if (!localOpen && (!admin || !timingSafeEqual(digest(token), digest(admin)))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const sql = getSql();
-  if (!sql) return Response.json({ error: "storage not configured" }, { status: 503 });
+  if (!sql) {
+    const rows = await fileSolves();
+    const body = [COLUMNS.join(","), ...rows.map((r) => COLUMNS.map((c) => csvCell(r[c])).join(","))].join("\n") + "\n";
+    return new Response(body, { headers: CSV_HEADERS });
+  }
 
   const enc = new TextEncoder();
   let lastId = 0;
@@ -52,11 +64,5 @@ export async function GET(request: Request) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/csv; charset=utf-8",
-      "content-disposition": 'attachment; filename="yomi_solves.csv"',
-      "cache-control": "no-store",
-    },
-  });
+  return new Response(stream, { headers: CSV_HEADERS });
 }

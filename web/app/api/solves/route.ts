@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { getSql } from "@/lib/db";
 import { PUZZLE_BY_ID } from "@/lib/puzzles";
 import { findStuck } from "@/lib/stuck";
+import { insertSolve, recentSolveCount } from "@/lib/store";
 
 const MAX_BODY_BYTES = 400_000;
+// TODO: rate limit is keyed on player_id, which the client sends; a fresh UUID per request bypasses it.
+// Key it on something the server controls (IP, signed cookie) before opening this up.
 const MAX_INSERTS_PER_HOUR = 60;
 
 const int = (min: number, max: number) => z.number().int().min(min).max(max);
@@ -40,29 +42,21 @@ export async function POST(request: Request) {
   const puzzle = PUZZLE_BY_ID.get(b.puzzle_id)!;
   if (b.grid_size !== puzzle.n) return fail(400, "grid_size does not match puzzle");
 
-  const sql = getSql();
-  if (!sql) {
-    console.error("[solves] DATABASE_URL is not set");
-    return fail(503, "storage not configured");
-  }
-
   try {
-    const [{ n }] = await sql`
-      select count(*)::int as n from solves
-      where player_id = ${b.player_id} and created_at > now() - interval '1 hour'`;
-    if (n >= MAX_INSERTS_PER_HOUR) return fail(429, "too many solves, try again later");
-
+    if ((await recentSolveCount(b.player_id)) >= MAX_INSERTS_PER_HOUR) {
+      return fail(429, "too many solves, try again later");
+    }
     // Derived on the server so these columns never depend on client maths.
     const { cell, maxPauseMs } = findStuck(b.events);
-    await sql`
-      insert into solves (player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
-                          solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before)
-      values (${b.player_id}, ${b.puzzle_id}, ${puzzle.n}, ${puzzle.dots.length}, ${b.device},
-              ${b.started_at_ms}, ${b.ended_at_ms}, ${b.solve_ms}, ${b.completed},
-              ${JSON.stringify(b.events)}::jsonb, ${b.backtracks}, ${maxPauseMs},
-              ${cell ? `{${cell[0]},${cell[1]}}` : null}::int[], ${b.played_zip_before})`;
+    await insertSolve({
+      ...b,
+      grid_size: puzzle.n,
+      n_dots: puzzle.dots.length,
+      max_pause_ms: maxPauseMs,
+      stuck_cell: cell,
+    });
   } catch (err) {
-    console.error("[solves] database error:", err instanceof Error ? err.message : err);
+    console.error("[solves] storage error:", err instanceof Error ? err.message : err);
     return fail(500, "could not store solve");
   }
   return Response.json({ ok: true }, { status: 201 });

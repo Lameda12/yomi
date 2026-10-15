@@ -1,3 +1,4 @@
+import Link from "next/link";
 import GameLoader from "@/components/GameLoader";
 import { CORE_IDS, PUZZLES } from "@/lib/puzzles";
 
@@ -14,7 +15,11 @@ export default function Home() {
       </header>
       <GameLoader puzzles={publicPuzzles} coreCount={CORE_IDS.length} />
       <footer className="mt-auto max-w-md text-center text-xs opacity-60">
-        Solves are logged anonymously (time and moves, no personal data) for a student ML project.
+        Solves are logged anonymously (time and moves, no personal data) for a student ML project.{" "}
+        <Link href="/stats" className="underline">
+          See the stats
+        </Link>
+        .
       </footer>
     </main>
   );

@@ -5,7 +5,9 @@ Reads data/puzzles.parquet (from prep_datasets.py) plus logged Yomi solves, then
 writes plots and a one-page write-up to reports/.
 
 Usage:
+  python analysis.py                           # auto: Neon if DATABASE_URL is set, else data/solves.jsonl
   python analysis.py --source neon             # solves from Neon (DATABASE_URL in .env)
+  python analysis.py --source jsonl            # solves from data/solves.jsonl (local, no Neon)
   python analysis.py --source csv              # solves from data/solves.csv (the /api/export file)
   python analysis.py --source csv --csv path/to/export.csv
   python analysis.py --source none             # public datasets only
@@ -28,6 +30,7 @@ ROOT = Path(__file__).resolve().parent
 PUZZLES_PARQUET = ROOT / "data" / "puzzles.parquet"
 ZIP_JSON = ROOT / "web" / "data" / "puzzles.json"
 REPORTS = ROOT / "reports"
+SOLVES_JSONL = ROOT / "data" / "solves.jsonl"  # written by the web app when DATABASE_URL is unset
 MIN_N = 5  # fewest solves before a correlation is reported
 
 
@@ -71,6 +74,11 @@ def load_solves(source: str, csv_path: Path) -> pd.DataFrame:
             cur.execute("select * from solves order by id")
             cols = [d.name for d in cur.description]
             df = pd.DataFrame(cur.fetchall(), columns=cols)
+    elif source == "jsonl":
+        if not SOLVES_JSONL.exists():
+            log(f"[solves] {SOLVES_JSONL} not found yet; play a puzzle locally first")
+            return pd.DataFrame()
+        df = pd.read_json(SOLVES_JSONL, lines=True, dtype={"player_id": str, "puzzle_id": str})
     else:
         if not csv_path.exists():
             raise SystemExit(f"{csv_path} not found. Download it from /api/export?token=...")
@@ -233,7 +241,7 @@ def fmt(s: pd.Series) -> str:
 def write_findings(corr: dict[str, pd.Series], stats: dict, n_heatmaps: int, source: str) -> Path:
     L: list[str] = ["# Yomi Sprint 1: what makes a puzzle hard?", ""]
     L += ["All correlations are Spearman rho (rank correlation, -1 to +1). "
-          "Regenerate with `python analysis.py --source neon|csv`.", ""]
+          "Regenerate with `python analysis.py --source neon|jsonl|csv`.", ""]
     L += ["## Where each difficulty label comes from", "",
           "| Data | Rows | Difficulty label | Source of label |", "|---|---|---|---|"]
     if "lichess" in corr:
@@ -294,7 +302,8 @@ def write_findings(corr: dict[str, pd.Series], stats: dict, n_heatmaps: int, sou
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--source", choices=["neon", "csv", "none"], default="neon", help="where to read Yomi solves from")
+    ap.add_argument("--source", choices=["auto", "neon", "jsonl", "csv", "none"], default="auto",
+                    help="where to read Yomi solves from (auto: neon if DATABASE_URL is set, else jsonl)")
     ap.add_argument("--csv", type=Path, default=ROOT / "data" / "solves.csv", help="CSV export path for --source csv")
     args = ap.parse_args()
 
@@ -304,6 +313,8 @@ def main() -> int:
     puz = pd.read_parquet(PUZZLES_PARQUET)
     zips = {p["id"]: p for p in json.loads(ZIP_JSON.read_text())}
 
+    if args.source == "auto":
+        args.source = "neon" if database_url() else "jsonl"
     solves = load_solves(args.source, args.csv)
     log(f"[solves] {len(solves)} rows from {args.source}")
     unknown = set(solves.puzzle_id) - set(zips) if len(solves) else set()
