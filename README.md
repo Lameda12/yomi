@@ -33,7 +33,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 - **Logo:** added to `web/public/logo.png`.
 
 ### Parked / blocked ⏸️
-- **Deploy (Vercel + Neon, live URL):** waiting on Andi.
+- **Deploy (Vercel + Neon, live URL):** waiting on Alamedin.
 - **Stuck-point model:** needs real solves with pause data. Code can ship first; the fit skips below 30 labeled solves.
 - **Evaluation + `reports/sprint2_model.md`:** needs data.
 - **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
