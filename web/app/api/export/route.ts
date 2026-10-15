@@ -3,7 +3,7 @@ import { getSql } from "@/lib/db";
 import { fileSolves } from "@/lib/store";
 
 const COLUMNS = [
-  "id", "created_at", "player_id", "puzzle_id", "grid_size", "n_dots", "device", "started_at_ms",
+  "id", "solve_id", "created_at", "player_id", "puzzle_id", "grid_size", "n_dots", "device", "started_at_ms",
   "ended_at_ms", "solve_ms", "completed", "events", "backtracks", "max_pause_ms", "stuck_cell",
   "played_zip_before",
 ] as const;
@@ -28,7 +28,9 @@ export async function GET(request: Request) {
   const sql = getSql();
   // Local demo (no Neon, no token, not production): the data is a file on this machine anyway.
   const localOpen = !admin && !sql && process.env.NODE_ENV !== "production";
-  const token = new URL(request.url).searchParams.get("token") ?? "";
+  // Header, not query string: URLs end up in request logs, browser history and Referer headers.
+  const auth = request.headers.get("authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
   if (!localOpen && (!admin || !timingSafeEqual(digest(token), digest(admin)))) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }

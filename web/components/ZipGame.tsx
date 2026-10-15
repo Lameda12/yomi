@@ -85,6 +85,7 @@ function clock(ms: number): string {
 // Mutable per-attempt state. Pointer events fire faster than renders, so the
 // source of truth lives in a ref and `path` state mirrors it for drawing.
 interface Attempt {
+  solveId: string; // sent with the solve so retries are stored once
   path: Cell[];
   t0: number | null; // performance.now() at first move
   startedAtMs: number | null; // wall clock at first move
@@ -95,6 +96,7 @@ interface Attempt {
 }
 
 const newAttempt = (p: PublicPuzzle): Attempt => ({
+  solveId: crypto.randomUUID(),
   path: [startCell(p)],
   t0: null,
   startedAtMs: null,
@@ -149,16 +151,13 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
       }
       if (completed) setSubmit("sending");
       const result = await submitSolve({
+        solve_id: a.solveId,
         player_id: playerId(),
         puzzle_id: puzzle.id,
         grid_size: puzzle.n,
         device: a.device,
         started_at_ms: a.startedAtMs,
-        ended_at_ms: a.startedAtMs + ms,
-        solve_ms: ms,
-        completed,
         events: a.events,
-        backtracks: a.backtracks,
         played_zip_before: readZipBefore(),
       });
       if (completed) setSubmit(result);
@@ -432,7 +431,7 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
             <p className="text-xs opacity-60">
               {submit === "sending" && "Saving…"}
               {submit === "saved" && "Solve logged. Thank you."}
-              {submit === "queued" && "Offline right now. This solve is saved here and will be sent on your next visit."}
+              {submit === "queued" && "Couldn't reach the server just now. This solve is saved here and will be sent on your next visit."}
               {submit === "failed" && "This solve could not be logged."}
             </p>
           </div>

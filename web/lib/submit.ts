@@ -1,23 +1,19 @@
 import type { GameEvent } from "./stuck";
 
+// solve_ms, backtracks and completed are not sent: the server derives them from `events`.
 export interface SolvePayload {
+  solve_id: string; // one per attempt; makes retries and queue flushes idempotent
   player_id: string;
   puzzle_id: string;
   grid_size: number;
   device: "mouse" | "touch" | null;
   started_at_ms: number;
-  ended_at_ms: number;
-  solve_ms: number;
-  completed: boolean;
   events: GameEvent[];
-  backtracks: number;
   played_zip_before: boolean | null;
 }
 
 const QUEUE_KEY = "yomi_queue";
 const MAX_QUEUED = 50;
-
-const keyOf = (p: SolvePayload) => `${p.puzzle_id}:${p.started_at_ms}`;
 
 function readQueue(): SolvePayload[] {
   try {
@@ -36,7 +32,7 @@ function writeQueue(q: SolvePayload[]) {
   }
 }
 
-// "retry" = network or server trouble; "drop" = the server rejected it for good (4xx).
+// "retry" = network trouble, server error or rate limit; "drop" = the server rejected it for good.
 async function post(p: SolvePayload): Promise<"ok" | "retry" | "drop"> {
   try {
     const body = JSON.stringify(p);
@@ -47,7 +43,7 @@ async function post(p: SolvePayload): Promise<"ok" | "retry" | "drop"> {
       keepalive: body.length < 60_000, // keepalive requests are capped at 64 KB
     });
     if (res.ok) return "ok";
-    return res.status >= 500 ? "retry" : "drop";
+    return res.status >= 500 || res.status === 429 || res.status === 408 ? "retry" : "drop";
   } catch {
     return "retry";
   }
@@ -70,8 +66,8 @@ export async function submitSolve(p: SolvePayload): Promise<"saved" | "queued" |
 export async function flushQueue(): Promise<void> {
   const settled = new Set<string>();
   for (const p of readQueue()) {
-    if ((await post(p)) !== "retry") settled.add(keyOf(p));
+    if ((await post(p)) !== "retry") settled.add(p.solve_id);
   }
   // Re-read so a solve queued while we were flushing is not lost.
-  if (settled.size) writeQueue(readQueue().filter((p) => !settled.has(keyOf(p))));
+  if (settled.size) writeQueue(readQueue().filter((p) => !settled.has(p.solve_id)));
 }

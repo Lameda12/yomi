@@ -81,15 +81,22 @@ def load_solves(source: str, csv_path: Path) -> pd.DataFrame:
         df = pd.read_json(SOLVES_JSONL, lines=True, dtype={"player_id": str, "puzzle_id": str})
     else:
         if not csv_path.exists():
-            raise SystemExit(f"{csv_path} not found. Download it from /api/export?token=...")
+            raise SystemExit(f"{csv_path} not found. Download it with "
+                             f"curl -H 'Authorization: Bearer $ADMIN_TOKEN' <site>/api/export -o {csv_path}")
         df = pd.read_csv(csv_path)
         for col in ("events", "stuck_cell"):  # JSON text in the export
             df[col] = df[col].map(lambda v: json.loads(v) if isinstance(v, str) and v else None)
     if df.empty:
         return df
     df["completed"] = df["completed"].astype(str).str.lower().isin(("true", "t", "1"))
-    # A retried request can insert the same attempt twice.
-    return df.drop_duplicates(subset=["player_id", "puzzle_id", "started_at_ms"]).reset_index(drop=True)
+    # A retried request can insert the same attempt twice. Newer rows carry a solve_id;
+    # older ones fall back to (player, puzzle, start time).
+    old_key = ["player_id", "puzzle_id", "started_at_ms"]
+    if "solve_id" not in df.columns:
+        return df.drop_duplicates(subset=old_key).reset_index(drop=True)
+    has_id = df.solve_id.notna() & (df.solve_id.astype(str) != "")
+    return pd.concat([df[has_id].drop_duplicates(subset=["solve_id"]),
+                      df[~has_id].drop_duplicates(subset=old_key)]).reset_index(drop=True)
 
 
 # ---------- public datasets ---------------------------------------------------

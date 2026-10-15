@@ -1,12 +1,14 @@
 import "server-only";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { getSql } from "./db";
-import type { GameEvent } from "./stuck";
+import { getSql } from "./db.ts";
+import { dedupeBySolveId } from "./dedupe.ts";
+import type { GameEvent } from "./stuck.ts";
 
 /** One stored attempt, shaped like a row of the `solves` table. */
 export type SolveRow = {
   id: number;
+  solve_id: string | null; // null for rows logged before solve ids existed
   created_at: string;
   player_id: string;
   puzzle_id: string;
@@ -24,7 +26,7 @@ export type SolveRow = {
   played_zip_before: boolean | null;
 };
 
-export type NewSolve = Omit<SolveRow, "id" | "created_at">;
+export type NewSolve = Omit<SolveRow, "id" | "created_at" | "solve_id"> & { solve_id: string };
 
 // Without DATABASE_URL, solves go to a local JSONL file (repo-root data/, next to puzzles.parquet).
 export const SOLVES_JSONL = process.env.SOLVES_JSONL ?? path.join(process.cwd(), "..", "data", "solves.jsonl");
@@ -48,7 +50,7 @@ async function readFileRows(): Promise<SolveRow[]> {
       // A half-written last line from a crash; skip it.
     }
   }
-  return rows;
+  return dedupeBySolveId(rows);
 }
 
 /** Solves this player stored in the last hour. */
@@ -64,22 +66,28 @@ export async function recentSolveCount(playerId: string): Promise<number> {
   return (await readFileRows()).filter((r) => r.player_id === playerId && Date.parse(r.created_at) > since).length;
 }
 
-export async function insertSolve(s: NewSolve): Promise<void> {
+/** Store a solve. Returns false when this solve_id is already stored (a retried request). */
+export async function insertSolve(s: NewSolve): Promise<boolean> {
   const sql = getSql();
   if (sql) {
-    await sql`
-      insert into solves (player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
+    const rows = await sql`
+      insert into solves (solve_id, player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
                           solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before)
-      values (${s.player_id}, ${s.puzzle_id}, ${s.grid_size}, ${s.n_dots}, ${s.device},
+      values (${s.solve_id}, ${s.player_id}, ${s.puzzle_id}, ${s.grid_size}, ${s.n_dots}, ${s.device},
               ${s.started_at_ms}, ${s.ended_at_ms}, ${s.solve_ms}, ${s.completed},
               ${JSON.stringify(s.events)}::jsonb, ${s.backtracks}, ${s.max_pause_ms},
-              ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before})`;
-    return;
+              ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before})
+      on conflict (solve_id) do nothing
+      returning id`;
+    return rows.length > 0;
   }
-  const id = (await readFileRows()).length + 1;
+  const existing = await readFileRows();
+  if (existing.some((r) => r.solve_id === s.solve_id)) return false;
+  const id = existing.reduce((m, r) => Math.max(m, r.id), 0) + 1;
   const row: SolveRow = { id, created_at: new Date().toISOString(), ...s };
   await mkdir(path.dirname(SOLVES_JSONL), { recursive: true });
   await appendFile(SOLVES_JSONL, JSON.stringify(row) + "\n");
+  return true;
 }
 
 /** Every stored solve, oldest first. Fine at prototype scale; the CSV export pages Neon itself. */
