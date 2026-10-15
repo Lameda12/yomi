@@ -77,6 +77,21 @@ class CellFeatureTests(unittest.TestCase):
                     self.assertIn(feats[k], (0.0, 1.0))
 
 
+class DegenerateBoardTests(unittest.TestCase):
+    FEW_DOTS = {"id": "one-dot", "n": 2, "dots": [[0, 0, 1]], "solution": [[0, 0], [0, 1], [1, 1], [1, 0]]}
+    ONE_CELL = {"id": "one-cell", "n": 1, "dots": [[0, 0, 1]], "solution": [[0, 0]]}
+
+    def test_fewer_than_two_dots_raises(self) -> None:
+        for fn in (puzzle_features, cell_features):
+            with self.assertRaisesRegex(ValueError, r"one-dot.*at least 2 dots"):
+                fn(self.FEW_DOTS)
+
+    def test_single_cell_board_raises(self) -> None:
+        for fn in (puzzle_features, cell_features):
+            with self.assertRaisesRegex(ValueError, r"one-cell.*single-cell"):
+                fn(self.ONE_CELL)
+
+
 class TestVectorTests(unittest.TestCase):
     """ml/test_vectors.json is the cross-language contract for the TypeScript port."""
 

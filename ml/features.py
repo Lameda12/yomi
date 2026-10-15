@@ -35,6 +35,15 @@ def _solution(puzzle: Puzzle) -> list[Cell]:
     return [(r, c) for r, c in puzzle["solution"]]
 
 
+def _check_board(puzzle: Puzzle) -> None:
+    """Raise ValueError for boards the features cannot describe."""
+    name = puzzle.get("id", "<no id>")
+    if len(puzzle["solution"]) < 2:
+        raise ValueError(f"puzzle {name}: a single-cell board has no path to describe (need at least 2 cells)")
+    if len(puzzle["dots"]) < 2:
+        raise ValueError(f"puzzle {name}: needs at least 2 dots to have a gap between dots, got {len(puzzle['dots'])}")
+
+
 def _dot_indices(puzzle: Puzzle) -> list[int]:
     """Index in the solution path of each dot, ordered by dot label (1, 2, 3, ...)."""
     where = {cell: i for i, cell in enumerate(_solution(puzzle))}
@@ -65,6 +74,7 @@ def puzzle_features(puzzle: Puzzle) -> dict[str, float]:
     gap = path distance between consecutive dots. mean_gap is not rounded
     (puzzles.json stores it rounded to 2 decimals; the model uses the exact value).
     """
+    _check_board(puzzle)
     path = _solution(puzzle)
     idx = _dot_indices(puzzle)
     gaps = [b - a for a, b in zip(idx, idx[1:])]
@@ -89,6 +99,7 @@ def cell_features(puzzle: Puzzle) -> dict[Cell, dict[str, float]]:
       puzzles this is only the final cell; hand-built boards can have trailing cells too.
     - path_frac: position along the solution, 0 at the start and 1 at the end.
     """
+    _check_board(puzzle)
     path = _solution(puzzle)
     n = puzzle["n"]
     last = len(path) - 1
