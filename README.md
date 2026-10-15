@@ -35,7 +35,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 ### Parked / blocked ⏸️
 - **Deploy (Vercel + Neon, live URL):** waiting on Alamedin.
 - **Stuck-point model:** code shipped (`ml/train_stuck.py`, logistic per cell, top 3). The fit skips below 30 labeled solves, so there are no stuck coefficients yet. Needs real solves with pause data.
-- **Evaluation + `reports/sprint2_model.md`:** needs data.
+- **Evaluation + `reports/sprint2_model.md`:** `ml/evaluate.py` (leave-one-player-out, mean-time and random-3 baselines) is shipped. The committed report is empty because it ran with 0 solves; rerun it where the data is.
 - **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
 
 ### Features to work on next 🛠️
@@ -59,6 +59,7 @@ npm test               # game + store tests
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m ml.train_time --source jsonl   # retrain time + stuck models from data/solves.jsonl
+python -m ml.evaluate --source jsonl     # leave-one-player-out eval, writes reports/sprint2_model.md
 python -m unittest discover -s ml -p "test_*.py" -t .
 ```
 

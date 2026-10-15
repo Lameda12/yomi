@@ -34,7 +34,7 @@ Tasks (update the checkboxes as you finish them):
 - [x] 3. `ml/features.py`: puzzle features and cell features (see the model contract). (2 h)
 - [ ] 4. Difficulty + solve-time model: ridge regression on `log(solve_ms)`, plus a per-player offset. (2.5 h) Unticked: only the solver-effort fallback has run (`trained_on.label = solver_effort`, 13 solves, 1 player, `players: {}`). Re-tick when the human-time path runs on 30+ real solves from 2+ players.
 - [ ] 5. Stuck-point model: logistic regression per cell, top 3. (1.5 h) Code done (`ml/train_stuck.py`, tests); unticked: the fit skips below 30 labeled solves, so model.json has no stuck coefficients yet. Re-tick when it fits on 30+ real solves.
-- [ ] 6. Evaluate vs baselines, export `web/public/model.json`, write `reports/sprint2_model.md`. (1 h)
+- [ ] 6. Evaluate vs baselines, export `web/public/model.json`, write `reports/sprint2_model.md`. (1 h) Code done (`ml/evaluate.py`, tests); unticked: the committed report was generated in an environment with 0 solves. Rerun `python -m ml.evaluate` against Neon or the local `data/solves.jsonl`, then re-tick.
 - [ ] 7. UI: prediction before the solve, predicted vs actual on the result card, prediction saved with the solve. (2 h)
 
 Extras, only if everything above is done: a test that /stats totals match DB counts; a test that a 429 never drops a solve.
