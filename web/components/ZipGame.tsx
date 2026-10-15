@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { timeFromBase, type Label, type Predictions } from "@/lib/predict";
 import { findStuck, type GameEvent } from "@/lib/stuck";
-import { flushQueue, submitSolve } from "@/lib/submit";
+import { flushQueue, submitSolve, type SolvePrediction } from "@/lib/submit";
 import { isSolved, type Cell, type Dot } from "@/lib/zip";
 
 export interface PublicPuzzle {
@@ -82,6 +83,13 @@ function clock(ms: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// solver_effort predicts solver steps, not time: never show it as a clock.
+function predictionText(label: Label, value: number): string {
+  return label === "human_time" ? clock(value) : `${Math.round(value).toLocaleString("en-US")} solver steps`;
+}
+
+const sameCell = (a: Cell, b: Cell) => a[0] === b[0] && a[1] === b[1];
+
 // Mutable per-attempt state. Pointer events fire faster than renders, so the
 // source of truth lives in a ref and `path` state mirrors it for drawing.
 interface Attempt {
@@ -106,7 +114,16 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
   device: null,
 });
 
-export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[]; coreCount: number }) {
+export default function ZipGame({
+  puzzles,
+  coreCount,
+  predictions,
+}: {
+  puzzles: PublicPuzzle[];
+  coreCount: number;
+  predictions: Predictions | null;
+}) {
+  const [player] = useState(playerId);
   const [zipBefore, setZipBefore] = useState<boolean | null>(readZipBefore);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount));
@@ -126,6 +143,16 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
   const number = puzzles.findIndex((p) => p.id === puzzle.id) + 1;
   const isCore = number <= coreCount;
   const labelAt = useMemo(() => new Map(dots.map(([r, c, v]) => [r * n + c, v])), [dots, n]);
+
+  // What Yomi predicts for this puzzle and player. Saved with the solve exactly as shown.
+  const prediction = useMemo<SolvePrediction | null>(() => {
+    const p = predictions?.byPuzzle[puzzle.id];
+    if (!predictions || !p) return null;
+    const { model } = predictions;
+    const value = timeFromBase(p.baseLogTime, model.players, player);
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return { model_version: model.version, label: model.label, value, stuck_cells: p.stuck };
+  }, [predictions, puzzle.id, player]);
 
   // Resend solves that could not be saved on an earlier visit.
   useEffect(() => {
@@ -152,17 +179,18 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
       if (completed) setSubmit("sending");
       const result = await submitSolve({
         solve_id: a.solveId,
-        player_id: playerId(),
+        player_id: player,
         puzzle_id: puzzle.id,
         grid_size: puzzle.n,
         device: a.device,
         started_at_ms: a.startedAtMs,
         events: a.events,
         played_zip_before: readZipBefore(),
+        prediction,
       });
       if (completed) setSubmit(result);
     },
-    [puzzle.id, puzzle.n],
+    [player, prediction, puzzle.id, puzzle.n],
   );
 
   // Apply a new path and record what changed.
@@ -377,6 +405,21 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
               </text>
             </g>
           ))}
+          {status === "solved" &&
+            prediction?.stuck_cells.map(([r, c]) => (
+              <rect
+                key={`p${r}-${c}`}
+                x={c + 0.18}
+                y={r + 0.18}
+                width={0.64}
+                height={0.64}
+                rx={0.1}
+                fill="#3b82f6"
+                fillOpacity={0.22}
+                stroke="#3b82f6"
+                strokeWidth={0.05}
+              />
+            ))}
           {stuck && (
             <rect
               x={stuck[1] + 0.06}
@@ -410,6 +453,22 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
       </div>
 
       <div className="min-h-24 w-full text-center text-sm" aria-live="polite">
+        {status !== "solved" && prediction && (
+          <p className="mb-1">
+            {prediction.label === "human_time" ? (
+              <>
+                Yomi predicts <b>{clock(prediction.value)}</b> for you. Beat it. 👀
+              </>
+            ) : (
+              <>
+                Yomi&apos;s difficulty read: <b>{predictionText(prediction.label, prediction.value)}</b>
+                <span className="block text-xs opacity-60">
+                  Not a time yet. Yomi needs 30+ real solves before it can predict yours.
+                </span>
+              </>
+            )}
+          </p>
+        )}
         {status === "idle" && <p>Start at 1. Connect the dots in order and fill every cell.</p>}
         {status === "solved" && (
           <div className="flex flex-col items-center gap-2">
@@ -422,6 +481,7 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
                 </>
               )}
             </p>
+            {prediction && <ResultVsPrediction prediction={prediction} actualMs={elapsed} stuck={stuck} />}
             <div className="flex items-center gap-2">
               <code className="select-all rounded-md bg-foreground/10 px-3 py-1.5">{shareLine}</code>
               <button onClick={copyShare} className="rounded-md border border-foreground/30 px-3 py-1.5">
@@ -437,6 +497,47 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ResultVsPrediction({
+  prediction,
+  actualMs,
+  stuck,
+}: {
+  prediction: SolvePrediction;
+  actualMs: number;
+  stuck: Cell | null;
+}) {
+  const { label, value, stuck_cells: guesses } = prediction;
+  const hit = stuck !== null && guesses.some((g) => sameCell(g, stuck));
+  let verdict: string;
+  if (label !== "human_time") {
+    verdict = "Steps and seconds don't compare yet. The time model unlocks after 30+ real solves.";
+  } else if (Math.abs(actualMs - value) <= 0.2 * value) {
+    verdict = "Yomi called it (within 20%).";
+  } else if (actualMs < value) {
+    verdict = `You beat Yomi by ${clock(value - actualMs)}.`;
+  } else {
+    verdict = `Yomi was ${clock(actualMs - value)} too optimistic.`;
+  }
+  return (
+    <div className="w-full rounded-lg border border-foreground/20 px-3 py-2 text-left">
+      <div className="flex justify-between font-mono">
+        <span>Predicted: {predictionText(label, value)}</span>
+        <span>Actual: {clock(actualMs)}</span>
+      </div>
+      <p className="text-xs opacity-70">{verdict}</p>
+      <p className="text-xs opacity-70">
+        {guesses.length === 0
+          ? "Stuck-spot guesses: not trained yet (needs 30+ real solves)."
+          : stuck === null
+            ? "Blue = Yomi's 3 stuck-spot guesses. No long pause to compare this time."
+            : hit
+              ? "Blue = Yomi's 3 stuck-spot guesses. It caught your stuck cell."
+              : "Blue = Yomi's 3 stuck-spot guesses. Your stuck cell got past it."}
+      </p>
     </div>
   );
 }

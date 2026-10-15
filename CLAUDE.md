@@ -12,7 +12,7 @@ Formula: **Hook → Fix → Proof.** Gen Z voice: casual, punchy, a bit of slang
 
 - **Hook:** You thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that before you start. 👀
 - **Fix:** Zip-style path puzzle + an ML model that predicts your time and your 3 stuck spots before you play. You try to beat it. Result card shows predicted vs actual. The model learns from every solve.
-- **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, 26 ml tests passing.
+- **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, 48 ml tests passing.
 
 Honesty rules for copy (these override hype):
 - The time model is still on the solver-effort fallback. Its output is solver steps, not ms. Say "predicts how hard it'll be" until the human-time path runs on 30+ real solves.
@@ -35,7 +35,7 @@ Tasks (update the checkboxes as you finish them):
 - [ ] 4. Difficulty + solve-time model: ridge regression on `log(solve_ms)`, plus a per-player offset. (2.5 h) Unticked: only the solver-effort fallback has run (`trained_on.label = solver_effort`, 13 solves, 1 player, `players: {}`). Re-tick when the human-time path runs on 30+ real solves from 2+ players.
 - [ ] 5. Stuck-point model: logistic regression per cell, top 3. (1.5 h) Code done (`ml/train_stuck.py`, tests); unticked: the fit skips below 30 labeled solves, so model.json has no stuck coefficients yet. Re-tick when it fits on 30+ real solves.
 - [ ] 6. Evaluate vs baselines, export `web/public/model.json`, write `reports/sprint2_model.md`. (1 h) Code done (`ml/evaluate.py`, tests); unticked: the committed report was generated in an environment with 0 solves. Rerun `python -m ml.evaluate` against Neon or the local `data/solves.jsonl`, then re-tick.
-- [ ] 7. UI: prediction before the solve, predicted vs actual on the result card, prediction saved with the solve. (2 h)
+- [x] 7. UI: prediction before the solve, predicted vs actual on the result card, prediction saved with the solve. (2 h) Done on the solver_effort model (shown as steps). Needs migration `003_prediction.sql` on Neon before deploy. Stuck guesses show on the result card only, once the stuck model is fitted.
 
 Extras, only if everything above is done: a test that /stats totals match DB counts; a test that a 429 never drops a solve.
 

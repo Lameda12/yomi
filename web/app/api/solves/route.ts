@@ -23,6 +23,16 @@ const Body = z.object({
   started_at_ms: int(1, Number.MAX_SAFE_INTEGER),
   events: z.array(z.tuple([int(0, 30 * 60_000), int(0, 6), int(0, 6), int(1, 49)])).min(1).max(5000),
   played_zip_before: z.boolean().nullable(),
+  // What the player was shown before the solve. Optional so solves queued by an older client still go through.
+  prediction: z
+    .object({
+      model_version: z.string().min(1).max(100),
+      label: z.enum(["solver_effort", "human_time"]),
+      value: z.number().positive().max(1e12),
+      stuck_cells: z.array(z.tuple([int(0, 6), int(0, 6)])).max(3),
+    })
+    .nullable()
+    .optional(),
 });
 
 const fail = (status: number, error: string) => Response.json({ error }, { status });
@@ -63,6 +73,7 @@ export async function POST(request: Request) {
       backtracks: game.backtracks,
       max_pause_ms: maxPauseMs,
       stuck_cell: cell,
+      prediction: b.prediction ?? null,
     });
     // Same solve_id again = a retry whose first response got lost; tell the client it is saved.
     if (!inserted) return Response.json({ ok: true, duplicate: true }, { status: 200 });

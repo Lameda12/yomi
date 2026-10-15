@@ -1,4 +1,14 @@
+import type { Label } from "./predict";
 import type { GameEvent } from "./stuck";
+import type { Cell } from "./zip";
+
+/** What the player was shown before the solve. value is ms for human_time, solver steps for solver_effort. */
+export interface SolvePrediction {
+  model_version: string;
+  label: Label;
+  value: number;
+  stuck_cells: Cell[]; // empty when the stuck model is not fitted
+}
 
 // solve_ms, backtracks and completed are not sent: the server derives them from `events`.
 export interface SolvePayload {
@@ -10,6 +20,7 @@ export interface SolvePayload {
   started_at_ms: number;
   events: GameEvent[];
   played_zip_before: boolean | null;
+  prediction: SolvePrediction | null;
 }
 
 const QUEUE_KEY = "yomi_queue";

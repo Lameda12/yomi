@@ -18,7 +18,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 
 **Proof:**
 - Sprint 1: on public data, puzzle size and shape predict difficulty. Queens grid size hits ρ = +0.84 against solver effort. Lichess solution length hits ρ = +0.55 against real human ratings. ([findings](reports/sprint1_findings.md))
-- Sprint 2: the solve pipeline is idempotent. Duplicate submits are dropped, results are derived on the server, and 429s get queued instead of lost. 26 ml tests pass.
+- Sprint 2: the solve pipeline is idempotent. Duplicate submits are dropped, results are derived on the server, and 429s get queued instead of lost. 48 ml tests pass.
 - Honest status: the model is still on its solver-effort fallback. It has 5 solves from 1 player. That's not enough for a human-time model yet, so the predictions are labeled as solver steps, not milliseconds. We're not hiding it.
 
 ## Current sprint: Sprint 2 (Oct 15 to 22)
@@ -31,12 +31,12 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 - **Solve-time model:** ridge model fitted on solver effort as a stand-in. Human-time path is written but not yet run on real data, so this task is unticked.
 - **Test rows:** the 8 early test solves are excluded from training by row id (kept in the data, not deleted).
 - **Logo:** added to `web/public/logo.png`.
+- **Prediction UI:** before each solve the game shows Yomi's read (solver steps while the model is on `solver_effort`, a time once it's on `human_time`). The result card shows predicted vs actual, plus the 3 stuck-spot guesses once that model is fitted. The prediction is saved with the solve (`prediction` column, migration `003_prediction.sql`). `web/lib/predict.ts` matches Python within 1e-6 on `ml/test_vectors.json`.
 
 ### Parked / blocked ⏸️
 - **Deploy (Vercel + Neon, live URL):** waiting on Alamedin.
 - **Stuck-point model:** code shipped (`ml/train_stuck.py`, logistic per cell, top 3). The fit skips below 30 labeled solves, so there are no stuck coefficients yet. Needs real solves with pause data.
 - **Evaluation + `reports/sprint2_model.md`:** `ml/evaluate.py` (leave-one-player-out, mean-time and random-3 baselines) is shipped. The committed report is empty because it ran with 0 solves; rerun it where the data is.
-- **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
 
 ### Features to work on next 🛠️
 1. **Get 100+ real solves** (the real blocker). Share the link with friends once it's deployed.

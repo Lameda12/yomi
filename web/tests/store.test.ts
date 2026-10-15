@@ -31,6 +31,7 @@ const solve = (solve_id: string) => ({
   max_pause_ms: null,
   stuck_cell: null,
   played_zip_before: null,
+  prediction: null,
 });
 
 test("same solve_id twice is stored once", async () => {
@@ -54,4 +55,12 @@ test("duplicates already in the file (concurrent retries) are dropped on read", 
 test("rows without a solve_id (older data) are all kept", () => {
   const rows = [{ solve_id: null }, { solve_id: null }, { solve_id: "a" }, { solve_id: "a" }];
   assert.equal(dedupeBySolveId(rows).length, 3);
+});
+
+test("the prediction shown before the solve is stored with it", async () => {
+  const id = randomUUID();
+  const prediction = { model_version: "v1", label: "solver_effort" as const, value: 812.5, stuck_cells: [[0, 1]] as [number, number][] };
+  assert.equal(await insertSolve({ ...solve(id), prediction }), true);
+  const row = (await allSolves()).find((r) => r.solve_id === id)!;
+  assert.deepEqual(row.prediction, prediction);
 });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { getSql } from "./db.ts";
 import { dedupeBySolveId } from "./dedupe.ts";
 import type { GameEvent } from "./stuck.ts";
+import type { SolvePrediction } from "./submit.ts";
 
 /** One stored attempt, shaped like a row of the `solves` table. */
 export type SolveRow = {
@@ -24,6 +25,7 @@ export type SolveRow = {
   max_pause_ms: number | null;
   stuck_cell: [number, number] | null;
   played_zip_before: boolean | null;
+  prediction: SolvePrediction | null; // null for rows logged before predictions existed
 };
 
 export type NewSolve = Omit<SolveRow, "id" | "created_at" | "solve_id"> & { solve_id: string };
@@ -72,11 +74,13 @@ export async function insertSolve(s: NewSolve): Promise<boolean> {
   if (sql) {
     const rows = await sql`
       insert into solves (solve_id, player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
-                          solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before)
+                          solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before,
+                          prediction)
       values (${s.solve_id}, ${s.player_id}, ${s.puzzle_id}, ${s.grid_size}, ${s.n_dots}, ${s.device},
               ${s.started_at_ms}, ${s.ended_at_ms}, ${s.solve_ms}, ${s.completed},
               ${JSON.stringify(s.events)}::jsonb, ${s.backtracks}, ${s.max_pause_ms},
-              ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before})
+              ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before},
+              ${s.prediction ? JSON.stringify(s.prediction) : null}::jsonb)
       on conflict (solve_id) do nothing
       returning id`;
     return rows.length > 0;

@@ -16,6 +16,10 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 **Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show "predicted: 42s, can you beat it?" before each puzzle.
 
+## Prediction (Sprint 2)
+
+Before the solve, the game shows Yomi's read. Right now the model is on its solver-effort fallback, so it says "difficulty read: N solver steps", not a time. The result card shows predicted vs actual and says plainly that steps and seconds don't compare yet. Stuck-spot guesses appear on the result card only, after the stuck model has 30+ labeled solves.
+
 ## If asked
 
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.

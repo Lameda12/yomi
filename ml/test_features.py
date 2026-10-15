@@ -146,6 +146,27 @@ class TestVectorTests(unittest.TestCase):
                 for k in CELL_FEATURES:
                     self.assertAlmostEqual(entry["features"][k], cells[cell][k], delta=TOL, msg=f"{v['id']} {cell} {k}")
 
+    def test_expected_predictions_match_recomputed(self) -> None:
+        from ml.predict import log_time, predict_time, stuck_scores, stuck_top
+
+        model, player = self.data["model"], self.data["player_id"]
+        by_id = {p["id"]: p for p in PUZZLES}
+        for v in self.data["vectors"]:
+            p = by_id[v["id"]]
+            self.assertAlmostEqual(v["time"]["log_value"], log_time(model, p), delta=TOL)
+            self.assertAlmostEqual(v["time"]["value"], predict_time(model, p), delta=TOL)
+            self.assertAlmostEqual(v["time"]["value_for_player"], predict_time(model, p, player), delta=TOL)
+            scores = [s for _, s in stuck_scores(model, p)]
+            self.assertEqual(len(v["stuck"]["scores"]), len(scores))
+            for want, got in zip(v["stuck"]["scores"], scores):
+                self.assertAlmostEqual(want, got, delta=TOL)
+            self.assertEqual([tuple(c) for c in v["stuck"]["top3"]], stuck_top(model, p))
+
+    def test_file_is_up_to_date(self) -> None:
+        from ml.make_test_vectors import build
+
+        self.assertEqual(json.loads(json.dumps(build())), self.data)
+
 
 if __name__ == "__main__":
     unittest.main()
