@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/public/logo.png" width="160" alt="Yomi logo">
+</p>
+
 # Yomi 🧩
 
 **Yomi is a daily path puzzle that guesses how you'll do before you play.**
