@@ -11,11 +11,13 @@ from ml.features import (
     cell_features,
     load_puzzles,
     puzzle_features,
+    solver_steps,
 )
 
 PUZZLES = load_puzzles()
 TEST_VECTORS = Path(__file__).resolve().parent / "test_vectors.json"
 TOL = 1e-6
+SOLVER_BUDGET = 300_000  # default budget of zip_solutions
 
 
 class PuzzleFeatureTests(unittest.TestCase):
@@ -30,9 +32,17 @@ class PuzzleFeatureTests(unittest.TestCase):
             self.assertAlmostEqual(f["mean_gap"], p["features"]["mean_gap"], delta=0.005, msg=p["id"])
             self.assertGreater(f["solver_steps"], 0, p["id"])
 
-    def test_solver_steps_is_deterministic(self) -> None:
-        p = PUZZLES[0]
-        self.assertEqual(puzzle_features(p)["solver_steps"], puzzle_features(p)["solver_steps"])
+    def test_solver_steps_known_small_board(self) -> None:
+        # 2x2, dot 1 at (0,0) and dot 2 at (1,0): two solutions, so the cap-2 search runs both.
+        # Trace: down, right, up = 4 calls (3 moves + root); right, down, left = 3 more -> 7.
+        p = {"id": "tiny", "n": 2, "dots": [[0, 0, 1], [1, 0, 2]],
+             "solution": [[0, 0], [1, 0], [1, 1], [0, 1]]}
+        self.assertEqual(solver_steps(p), 7)
+
+    def test_solver_steps_positive_and_within_budget_for_first_puzzle(self) -> None:
+        steps = solver_steps(PUZZLES[0])
+        self.assertGreater(steps, 0)
+        self.assertLessEqual(steps, SOLVER_BUDGET)  # budget + 1 would mean the sentinel fired
 
 
 class CellFeatureTests(unittest.TestCase):
@@ -43,20 +53,32 @@ class CellFeatureTests(unittest.TestCase):
             for feats in cells.values():
                 self.assertEqual(list(feats), CELL_FEATURES)
 
-    def test_known_puzzle(self) -> None:
-        p = next(q for q in PUZZLES if q["id"] == "zip-5x5-01")
+    def test_first_puzzle_matches_independent_walk(self) -> None:
+        p = PUZZLES[0]
+        n, sol = p["n"], [tuple(c) for c in p["solution"]]
+        label_at = {(r, c): v for r, c, v in p["dots"]}
         cells = cell_features(p)
-        # Path starts on dot 1 at (1,3); dot 2 at (1,4) is one step away.
-        self.assertEqual(cells[(1, 3)]["dist_to_next_dot"], 1.0)
-        self.assertEqual(cells[(1, 3)]["path_frac"], 0.0)
-        # (0,4) sits between dot 2 (index 1) and dot 3 at (0,0) (index 6): 5-step leg, 4 steps to go.
-        self.assertEqual(cells[(0, 4)]["segment_len"], 5.0)
-        self.assertEqual(cells[(0, 4)]["dist_to_next_dot"], 5.0 - 1.0)
-        self.assertEqual(cells[(0, 4)]["is_corner"], 1.0)
-        self.assertEqual(cells[(0, 4)]["is_turn"], 1.0)
-        # Interior cell.
-        self.assertEqual(cells[(1, 1)]["is_edge"], 0.0)
-        self.assertEqual(cells[(3, 1)]["path_frac"], 1.0)
+
+        # Dot 1 is the first cell; the last dot is the last cell (the generator guarantees both).
+        self.assertEqual(label_at[sol[0]], 1)
+        self.assertEqual(label_at[sol[-1]], len(p["dots"]))
+        self.assertEqual(cells[sol[0]]["path_frac"], 0.0)
+        self.assertEqual(cells[sol[-1]]["path_frac"], 1.0)
+
+        for i, cell in enumerate(sol):
+            # Walk forward along the path until the next dot.
+            j = i + 1
+            while j < len(sol) and sol[j] not in label_at:
+                j += 1
+            feats = cells[cell]
+            if j < len(sol):
+                self.assertEqual(feats["dist_to_next_dot"], j - i, cell)
+            else:
+                self.assertEqual(feats["dist_to_next_dot"], 0.0, cell)
+            r, c = cell
+            self.assertEqual(feats["is_edge"], float(r in (0, n - 1) or c in (0, n - 1)), cell)
+            self.assertEqual(feats["is_corner"], float(r in (0, n - 1) and c in (0, n - 1)), cell)
+            self.assertAlmostEqual(feats["path_frac"], i / (len(sol) - 1), delta=TOL, msg=str(cell))
 
     def test_cells_at_or_after_last_dot_have_no_leg(self) -> None:
         # 2x2 board, path (0,0) (0,1) (1,1) (1,0); dots only on the first two cells,
