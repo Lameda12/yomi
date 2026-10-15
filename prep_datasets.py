@@ -235,7 +235,7 @@ def random_hamiltonian_path(n: int, rng: random.Random) -> list[tuple[int, int]]
 
 
 def zip_solutions(n: int, dots: dict[tuple[int, int], int], cap: int = 2,
-                  budget: int = 300_000) -> int:
+                  budget: int = 300_000, steps_out: list[int] | None = None) -> int:
     """Count paths (capped) that start at dot 1, visit every cell, and hit dots in order.
     Returns -1 if the search budget runs out (puzzle is then skipped)."""
     order = {v: k for k, v in dots.items()}
@@ -267,6 +267,8 @@ def zip_solutions(n: int, dots: dict[tuple[int, int], int], cap: int = 2,
         return False
 
     dfs(start, 2)
+    if steps_out is not None:
+        steps_out.append(steps)  # search steps used (budget + 1 if it ran out)
     return -1 if steps > budget else count
 
 

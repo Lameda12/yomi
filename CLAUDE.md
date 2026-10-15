@@ -14,7 +14,7 @@ Tasks (update the checkboxes as you finish them):
 
 - [x] 1. Data quality: dedupe by client `solve_id` (unique constraint + `ON CONFLICT DO NOTHING`; dedupe on read in JSONL mode). Compute `solve_ms`, `backtracks`, `stuck_cell` and `completed` on the server from `events`, ignoring the client's values. Tests for both. (2 h)
 - [ ] 2. Deploy on Vercel + Neon. Run the migrations. Live URL in README. (1.5 h)
-- [ ] 3. `ml/features.py`: puzzle features and cell features (see the model contract). (2 h)
+- [x] 3. `ml/features.py`: puzzle features and cell features (see the model contract). (2 h)
 - [ ] 4. Difficulty + solve-time model: ridge regression on `log(solve_ms)`, plus a per-player offset. (2.5 h)
 - [ ] 5. Stuck-point model: logistic regression per cell, top 3. (1.5 h)
 - [ ] 6. Evaluate vs baselines, export `web/public/model.json`, write `reports/sprint2_model.md`. (1 h)
