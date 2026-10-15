@@ -3,3 +3,4 @@ pyarrow
 zstandard
 matplotlib
 psycopg[binary]
+numpy
