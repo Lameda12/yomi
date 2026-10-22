@@ -82,6 +82,19 @@ export function randomHamiltonianPath(n: number, rng: Rng): Cell[] | null {
  * in order. Returns -1 if the search budget runs out.
  */
 export function countSolutions(n: number, dots: Dot[], cap = 2, budget = 300_000): number {
+  const { count, steps } = searchSolutions(n, dots, cap, budget);
+  return steps > budget ? -1 : count;
+}
+
+/**
+ * Search steps of the uniqueness solver (cap 2, same search as countSolutions). Matches `solver_steps`
+ * in ml/features.py: if the budget runs out it returns budget + 1, not the true effort.
+ */
+export function solverSteps(n: number, dots: Dot[], budget = 300_000): number {
+  return searchSolutions(n, dots, 2, budget).steps;
+}
+
+function searchSolutions(n: number, dots: Dot[], cap: number, budget: number): { count: number; steps: number } {
   const total = n * n;
   const label = new Int16Array(total); // 0 = no dot
   let start = -1;
@@ -89,7 +102,7 @@ export function countSolutions(n: number, dots: Dot[], cap = 2, budget = 300_000
     label[r * n + c] = v;
     if (v === 1) start = r * n + c;
   }
-  if (start < 0) return 0;
+  if (start < 0) return { count: 0, steps: 0 };
   const k = dots.length;
   const seen = new Uint8Array(total);
   seen[start] = 1;
@@ -117,7 +130,7 @@ export function countSolutions(n: number, dots: Dot[], cap = 2, budget = 300_000
   };
 
   dfs(start, 2, 1);
-  return steps > budget ? -1 : count;
+  return { count, steps };
 }
 
 /** One unique-solution puzzle, or null if this attempt did not converge. */
