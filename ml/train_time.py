@@ -93,9 +93,9 @@ def _std(values: np.ndarray) -> float:
 
 # ---------- data --------------------------------------------------------------
 
-def solves_from_frame(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] = (),
-                      exclude_ids: Iterable[str] = EXCLUDED_ROW_IDS) -> list[Solve]:
-    """Keep completed solves from real humans. `df` is what analysis.load_solves returns.
+def human_records(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] = (),
+                  exclude_ids: Iterable[str] = EXCLUDED_ROW_IDS) -> list[dict[str, Any]]:
+    """Rows of completed solves from real humans, as dicts. `df` is what analysis.load_solves returns.
 
     The schema has no "test row" marker, so test and fake rows are dropped by player id
     (`exclude_players`) or by row id (`exclude_ids`, see EXCLUDED_ROW_IDS). Delete fake rows
@@ -106,16 +106,22 @@ def solves_from_frame(df: Any, puzzle_ids: set[str], exclude_players: Iterable[s
         return []
     excluded = set(exclude_players)
     excluded_ids = set(map(str, exclude_ids))
-    out: list[Solve] = []
+    out: list[dict[str, Any]] = []
     for row in df.to_dict("records"):
         ms = row.get("solve_ms")
         if not row.get("completed") or ms is None or not math.isfinite(float(ms)) or float(ms) <= 0:
             continue
-        pid, puzzle = str(row["player_id"]), str(row["puzzle_id"])
-        if pid in excluded or str(row.get("id")) in excluded_ids or puzzle not in puzzle_ids:
+        if str(row["player_id"]) in excluded or str(row.get("id")) in excluded_ids or str(row["puzzle_id"]) not in puzzle_ids:
             continue
-        out.append((pid, puzzle, float(ms)))
+        out.append(row)
     return out
+
+
+def solves_from_frame(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] = (),
+                      exclude_ids: Iterable[str] = EXCLUDED_ROW_IDS) -> list[Solve]:
+    """Completed human solves as (player_id, puzzle_id, solve_ms). See human_records for the filter."""
+    return [(str(r["player_id"]), str(r["puzzle_id"]), float(r["solve_ms"]))
+            for r in human_records(df, puzzle_ids, exclude_players, exclude_ids)]
 
 
 def load_training_solves(source: str, puzzle_ids: set[str], exclude_players: Iterable[str] = ()) -> list[Solve]:

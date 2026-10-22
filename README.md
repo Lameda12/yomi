@@ -36,8 +36,8 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 - **Logo:** added to `web/public/logo.png`.
 
 ### Parked / blocked ⏸️
-- **Stuck-point model:** needs real solves with pause data. Code can ship first; the fit skips below 30 labeled solves.
-- **Evaluation + `reports/sprint2_model.md`:** needs data.
+- **Stuck-point model:** code and tests are done (`ml/train_stuck.py`). The fit is skipped below 30 usable solves, so no stuck cells are predicted yet.
+- **Evaluation + `reports/sprint2_model.md`:** pipeline and report exist (`python -m ml.pipeline`). Both evals say "not run" until there are 2+ players and 30+ solves.
 - **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
 
 ### Features to work on next 🛠️

@@ -1,7 +1,7 @@
 {
-  "version": "20261015-solver_effort-n5",
+  "version": "20261022-solver_effort-n7",
   "trained_on": {
-    "human_solves": 5,
+    "human_solves": 7,
     "label": "solver_effort"
   },
   "puzzle_features": [
