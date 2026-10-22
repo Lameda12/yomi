@@ -416,11 +416,11 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
           <button
             onClick={clear}
             disabled={status === "solved" || path.length <= 1}
-            className="rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
+            className="min-h-11 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
           >
             Clear
           </button>
-          <button onClick={next} className="rounded-lg bg-foreground px-4 py-2 text-background">
+          <button onClick={next} className="min-h-11 rounded-lg bg-foreground px-4 py-2 text-background">
             {status === "solved" ? "Next puzzle" : "Skip"}
           </button>
         </div>
