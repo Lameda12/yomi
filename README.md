@@ -6,7 +6,7 @@
 
 **Yomi is a daily path puzzle that guesses how you'll do before you play.**
 
-Connect the numbered dots with one line. Before you start, Yomi predicts your time and the 3 cells you'll get stuck on. Then you try to beat the prediction. The result card shows predicted vs actual, and the model learns from every solve.
+Connect the numbered dots with one line. Before you start, Yomi predicts your time. Then you try to beat the prediction. When you finish, the result card shows predicted vs actual, plus the 3 cells it expected you to get stuck on (revealed only after the solve, never before). The model learns from every solve.
 
 Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 2026**.
 
@@ -16,7 +16,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 
 **Hook:** Everyone's played a puzzle and thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that about you before you start. 👀
 
-**Fix:** Yomi is a Zip-style path puzzle with an ML model under the hood. It reads the puzzle (grid size, gaps, turns, solver effort) and your past solves, then predicts your time and your stuck spots. You play, you see the receipts, and you get a rematch.
+**Fix:** Yomi is a Zip-style path puzzle with an ML model under the hood. It reads the puzzle (grid size, gaps, turns, solver effort) and your past solves, then predicts your time before you play and your stuck spots for the result card. You play, you see the receipts, and you get a rematch.
 
 **Proof:**
 - Sprint 1: on public data, puzzle size and shape predict difficulty. Queens grid size hits ρ = +0.84 against solver effort. Lichess solution length hits ρ = +0.55 against real human ratings. ([findings](reports/sprint1_findings.md))
@@ -25,7 +25,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 
 ## Current sprint: Sprint 2 (Oct 15 to 22)
 
-**Goal:** Yomi is live with 100+ real solves, no duplicates, and a model that predicts time and stuck points before each solve.
+**Goal:** Yomi is live with 100+ real solves, no duplicates, and a model that predicts time before each solve, with its stuck-point predictions revealed on the result card.
 
 ### Done ✅
 - **Data quality:** dedupe by client `solve_id` (unique constraint + `ON CONFLICT DO NOTHING`). `solve_ms`, `backtracks`, `stuck_cell`, and `completed` are computed on the server, and the client's values are ignored. Tests included.
@@ -43,7 +43,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 ### Features to work on next 🛠️
 1. **Get 100+ real solves** (the real blocker). Share the live link with friends.
 2. **Result card:** predicted vs actual, with a "beat the bot" rematch button.
-3. **Stuck-point highlights:** show the 3 predicted cells before the solve.
+3. **Stuck-point highlights:** show the 3 predicted cells on the result card only, after the solve ends. Never before.
 4. **Model label check in the UI:** if `trained_on.label` is `solver_effort`, show steps, never ms.
 5. **Stats page:** totals that match the database (extra test).
 6. **Sprint 3 (Oct 22 to 29):** personalization, "Most Unpredictable at Dal" leaderboard, model-tuned daily difficulty, retrain on the full data, showcase rehearsal.
