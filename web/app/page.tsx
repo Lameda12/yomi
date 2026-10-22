@@ -1,5 +1,6 @@
 import Link from "next/link";
 import GameLoader from "@/components/GameLoader";
+import { loadTimeInfo } from "@/lib/model";
 import { CORE_IDS, PUZZLES } from "@/lib/puzzles";
 
 export default function Home() {
@@ -13,7 +14,7 @@ export default function Home() {
         </h1>
         <p className="text-sm opacity-60">Read the grid. One path, every cell.</p>
       </header>
-      <GameLoader puzzles={publicPuzzles} coreCount={CORE_IDS.length} />
+      <GameLoader puzzles={publicPuzzles} coreCount={CORE_IDS.length} prediction={loadTimeInfo()} />
       <footer className="mt-auto max-w-md text-center text-xs opacity-60">
         Solves are logged anonymously (time and moves, no personal data) for a student ML project.{" "}
         <Link href="/stats" className="underline">

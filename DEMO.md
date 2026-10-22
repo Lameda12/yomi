@@ -14,7 +14,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 **Findings so far (20s).** In Lichess, solution length vs rating gives Spearman ρ = **+0.55**. That's our strongest signal, and its labels come from **real humans**. Queens (ρ = +0.84 for grid size) and Sudoku look strong too, but their labels come from **solvers**, so they measure algorithm effort, not human difficulty. That's exactly why Yomi needs its own human solve data.
 
-**Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show "predicted: 42s, can you beat it?" before each puzzle.
+**Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show a prediction before each puzzle. Today it is the solver-effort stand-in, so the game says "how hard it'll be" in solver steps, not a time. It switches to "predicted: 42s, can you beat it?" once the human-time model has 30+ real solves.
 
 ## If asked
 

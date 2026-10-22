@@ -10,6 +10,8 @@ export interface SolvePayload {
   started_at_ms: number;
   events: GameEvent[];
   played_zip_before: boolean | null;
+  // What Yomi predicted before the solve; null when no model loaded. Old queued payloads lack it.
+  prediction?: { value: number; unit: "ms" | "solver_steps"; model_version: string } | null;
 }
 
 const QUEUE_KEY = "yomi_queue";

@@ -5,7 +5,7 @@ import { fileSolves } from "@/lib/store";
 const COLUMNS = [
   "id", "solve_id", "created_at", "player_id", "puzzle_id", "grid_size", "n_dots", "device", "started_at_ms",
   "ended_at_ms", "solve_ms", "completed", "events", "backtracks", "max_pause_ms", "stuck_cell",
-  "played_zip_before",
+  "played_zip_before", "pred_value", "pred_unit", "model_version",
 ] as const;
 const PAGE = 500;
 const CSV_HEADERS = {

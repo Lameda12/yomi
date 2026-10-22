@@ -35,7 +35,7 @@ Tasks (update the checkboxes as you finish them):
 - [ ] 4. Difficulty + solve-time model: ridge regression on `log(solve_ms)`, plus a per-player offset. (2.5 h) Unticked: only the solver-effort fallback has run (`trained_on.label = solver_effort`, 13 solves, 1 player, `players: {}`). Re-tick when the human-time path runs on 30+ real solves from 2+ players.
 - [ ] 5. Stuck-point model: logistic regression per cell, top 3. (1.5 h) Unticked: `ml/train_stuck.py` and tests are done, but the fit is skipped below 30 usable solves (7 solves, 1 player), so `model.json` has `stuck.coef = {}`. Re-tick when it is fitted on 30+ real solves.
 - [ ] 6. Evaluate vs baselines, export `web/public/model.json`, write `reports/sprint2_model.md`. (1 h) Unticked: `python -m ml.pipeline` exports and writes the report, but both leave-one-player-out evals say "not run" (needs 2+ players and 30+ solves). Re-tick when real baseline numbers exist.
-- [ ] 7. UI: prediction before the solve, predicted vs actual on the result card, prediction saved with the solve. (2 h)
+- [x] 7. UI: prediction before the solve, predicted vs actual on the result card, prediction saved with the solve. (2 h) `lib/predict.ts` matches `ml/test_vectors.json` within 1e-6. While `trained_on.label` is `solver_effort` the UI shows solver steps and a relative read, never ms. Stuck cells come from `/api/stuck` after the solve only (empty until the stuck model is trained).
 
 Extras, only if everything above is done: a test that /stats totals match DB counts; a test that a 429 never drops a solve.
 

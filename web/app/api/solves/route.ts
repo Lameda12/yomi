@@ -23,6 +23,15 @@ const Body = z.object({
   started_at_ms: int(1, Number.MAX_SAFE_INTEGER),
   events: z.array(z.tuple([int(0, 30 * 60_000), int(0, 6), int(0, 6), int(1, 49)])).min(1).max(5000),
   played_zip_before: z.boolean().nullable(),
+  // What the page predicted before the solve. Optional: no model, or an older client.
+  prediction: z
+    .object({
+      value: z.number().positive().max(1e12),
+      unit: z.enum(["ms", "solver_steps"]),
+      model_version: z.string().max(64),
+    })
+    .nullable()
+    .optional(),
 });
 
 const fail = (status: number, error: string) => Response.json({ error }, { status });
@@ -53,8 +62,9 @@ export async function POST(request: Request) {
     }
     // Derived on the server so these columns never depend on client maths.
     const { cell, maxPauseMs } = findStuck(b.events);
+    const { prediction, ...rest } = b;
     const inserted = await insertSolve({
-      ...b,
+      ...rest,
       grid_size: puzzle.n,
       n_dots: puzzle.dots.length,
       ended_at_ms: b.started_at_ms + game.solveMs,
@@ -63,6 +73,9 @@ export async function POST(request: Request) {
       backtracks: game.backtracks,
       max_pause_ms: maxPauseMs,
       stuck_cell: cell,
+      pred_value: prediction?.value ?? null,
+      pred_unit: prediction?.unit ?? null,
+      model_version: prediction?.model_version ?? null,
     });
     // Same solve_id again = a retry whose first response got lost; tell the client it is saved.
     if (!inserted) return Response.json({ ok: true, duplicate: true }, { status: 200 });

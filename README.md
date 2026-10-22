@@ -30,6 +30,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 ### Done ✅
 - **Data quality:** dedupe by client `solve_id` (unique constraint + `ON CONFLICT DO NOTHING`). `solve_ms`, `backtracks`, `stuck_cell`, and `completed` are computed on the server, and the client's values are ignored. Tests included.
 - **Deploy:** live on Vercel with Neon Postgres, migrations applied. One real solve on the live URL landed in Neon with the server-derived fields, then was deleted. Next.js upgraded to 16.4.2 for a critical advisory.
+- **Prediction UI:** before each solve the game shows Yomi's read of the puzzle (solver steps and an easier/harder cue while the label is `solver_effort`, a time once there is a human-time model). The result card shows predicted vs actual. The prediction is saved with the solve (migration 003). If `model.json` is missing or invalid, the game just runs without predictions. `lib/predict.ts` matches the Python test vectors within 1e-6.
 - **Features:** `ml/features.py` builds puzzle and cell features. 11 tests pass.
 - **Solve-time model:** ridge model fitted on solver effort as a stand-in. Human-time path is written but not yet run on real data, so this task is unticked.
 - **Test rows:** the 8 early test solves are excluded from training by row id (kept in the data, not deleted).
@@ -38,13 +39,12 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 ### Parked / blocked ⏸️
 - **Stuck-point model:** code and tests are done (`ml/train_stuck.py`). The fit is skipped below 30 usable solves, so no stuck cells are predicted yet.
 - **Evaluation + `reports/sprint2_model.md`:** pipeline and report exist (`python -m ml.pipeline`). Both evals say "not run" until there are 2+ players and 30+ solves.
-- **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
 
 ### Features to work on next 🛠️
 1. **Get 100+ real solves** (the real blocker). Share the live link with friends.
-2. **Result card:** predicted vs actual, with a "beat the bot" rematch button.
+2. **Result card:** add a "beat the bot" rematch button (predicted vs actual is already there).
 3. **Stuck-point highlights:** show the 3 predicted cells on the result card only, after the solve ends. Never before.
-4. **Model label check in the UI:** if `trained_on.label` is `solver_effort`, show steps, never ms.
+4. **Stuck cells on the result card:** wired (`/api/stuck`, after the solve only) but empty until the stuck model is fitted on 30+ real solves.
 5. **Stats page:** totals that match the database (extra test).
 6. **Sprint 3 (Oct 22 to 29):** personalization, "Most Unpredictable at Dal" leaderboard, model-tuned daily difficulty, retrain on the full data, showcase rehearsal.
 

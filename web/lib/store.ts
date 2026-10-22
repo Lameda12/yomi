@@ -24,6 +24,10 @@ export type SolveRow = {
   max_pause_ms: number | null;
   stuck_cell: [number, number] | null;
   played_zip_before: boolean | null;
+  // Prediction shown before the solve (optional: rows from before this existed, or visits without a model).
+  pred_value?: number | null;
+  pred_unit?: "ms" | "solver_steps" | null;
+  model_version?: string | null;
 };
 
 export type NewSolve = Omit<SolveRow, "id" | "created_at" | "solve_id"> & { solve_id: string };
@@ -72,11 +76,13 @@ export async function insertSolve(s: NewSolve): Promise<boolean> {
   if (sql) {
     const rows = await sql`
       insert into solves (solve_id, player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
-                          solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before)
+                          solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before,
+                          pred_value, pred_unit, model_version)
       values (${s.solve_id}, ${s.player_id}, ${s.puzzle_id}, ${s.grid_size}, ${s.n_dots}, ${s.device},
               ${s.started_at_ms}, ${s.ended_at_ms}, ${s.solve_ms}, ${s.completed},
               ${JSON.stringify(s.events)}::jsonb, ${s.backtracks}, ${s.max_pause_ms},
-              ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before})
+              ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before},
+              ${s.pred_value ?? null}, ${s.pred_unit ?? null}, ${s.model_version ?? null})
       on conflict (solve_id) do nothing
       returning id`;
     return rows.length > 0;

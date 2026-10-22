@@ -55,3 +55,15 @@ test("rows without a solve_id (older data) are all kept", () => {
   const rows = [{ solve_id: null }, { solve_id: null }, { solve_id: "a" }, { solve_id: "a" }];
   assert.equal(dedupeBySolveId(rows).length, 3);
 });
+
+test("prediction fields are stored with the solve, and older solves without them still work", async () => {
+  const withPred = randomUUID();
+  await insertSolve({ ...solve(withPred), pred_value: 39.5, pred_unit: "solver_steps", model_version: "v-test" });
+  const row = (await allSolves()).find((r) => r.solve_id === withPred)!;
+  assert.deepEqual([row.pred_value, row.pred_unit, row.model_version], [39.5, "solver_steps", "v-test"]);
+
+  const without = randomUUID();
+  await insertSolve(solve(without));
+  const plain = (await allSolves()).find((r) => r.solve_id === without)!;
+  assert.equal(plain.pred_value ?? null, null);
+});
