@@ -1,12 +1,12 @@
 // Applies migrations/*.sql in filename order. Run: npm run db:migrate
-// Reads DATABASE_URL from the environment (npm script loads .env.local).
+// Reads DATABASE_URL from the environment (npm script loads .env.neon.local, which is not read by `next dev`, so local dev stays in file mode).
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { neon, neonConfig } from "@neondatabase/serverless";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error("DATABASE_URL is not set. Put it in web/.env.local or run `vercel env pull .env.local`.");
+  console.error("DATABASE_URL is not set. Put it in web/.env.neon.local (e.g. `vercel env pull .env.neon.local`).");
   process.exit(1);
 }
 if (process.env.NEON_LOCAL_PROXY) neonConfig.fetchEndpoint = process.env.NEON_LOCAL_PROXY;

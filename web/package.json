@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "node --conditions=react-server --test 'tests/*.test.ts'",
     "gen:puzzles": "node scripts/generate-puzzles.ts",
-    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs"
+    "db:migrate": "node --env-file-if-exists=.env.neon.local scripts/migrate.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

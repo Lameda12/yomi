@@ -51,7 +51,7 @@ def spearman(a: pd.Series, b: pd.Series) -> float:
 def database_url() -> str | None:
     if os.environ.get("DATABASE_URL"):
         return os.environ["DATABASE_URL"]
-    for env in (ROOT / ".env", ROOT / "web" / ".env.local"):
+    for env in (ROOT / ".env", ROOT / "web" / ".env.neon.local"):
         if not env.exists():
             continue
         for line in env.read_text().splitlines():
@@ -69,7 +69,7 @@ def load_solves(source: str, csv_path: Path) -> pd.DataFrame:
 
         url = database_url()
         if not url:
-            raise SystemExit("DATABASE_URL not found (environment, .env or web/.env.local)")
+            raise SystemExit("DATABASE_URL not found (environment, .env or web/.env.neon.local)")
         with psycopg.connect(url, connect_timeout=15) as conn, conn.cursor() as cur:
             cur.execute("select * from solves order by id")
             cols = [d.name for d in cur.description]

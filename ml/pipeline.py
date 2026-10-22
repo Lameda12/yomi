@@ -1,6 +1,6 @@
 """Train both models, evaluate them, export web/public/model.json, write reports/sprint2_model.md.
 
-Run from the repo root:  .venv/bin/python -m ml.pipeline [--source auto|neon|jsonl]
+Run from the repo root:  .venv/bin/python -m ml.pipeline [--source jsonl|neon]   (default: jsonl)
 
 Training data is completed solves from real humans only (see ml/train_time.py for the filter).
 The report states the real numbers, including "not run" when there is not enough data.
@@ -128,7 +128,8 @@ Generated {today} by `python -m ml.pipeline`. Numbers below are what the data ga
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--source", choices=("auto", "neon", "jsonl"), default="auto")
+    ap.add_argument("--source", choices=("jsonl", "neon"), default="jsonl",
+                    help="jsonl = data/solves.jsonl (default); neon = the live database, needs DATABASE_URL")
     ap.add_argument("--exclude-player", action="append", default=[], metavar="UUID", help="drop this player's rows; repeatable")
     ap.add_argument("--out", type=Path, default=MODEL_JSON, help="model.json path")
     ap.add_argument("--report", type=Path, default=REPORT, help="report path")
@@ -137,8 +138,6 @@ def main() -> int:
     import analysis  # same loader and solve_id dedupe as the other scripts
 
     source = args.source
-    if source == "auto":
-        source = "neon" if analysis.database_url() else "jsonl"
     log(f"[pipeline] reading solves from {source}")
     df = analysis.load_solves(source, ROOT / "data" / "solves.csv")
 

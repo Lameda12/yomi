@@ -1,6 +1,6 @@
 """Solve-time model: ridge regression on log(solve_ms) plus a shrunk per-player offset.
 
-Run from the repo root:  .venv/bin/python -m ml.train_time [--source auto|neon|jsonl]
+Run from the repo root:  .venv/bin/python -m ml.train_time [--source jsonl|neon|auto]  (default: jsonl)
 
 Model contract (CLAUDE.md "Model contract"):
     predicted ms = exp(intercept + sum(coef[f] * x[f]) + players.get(player_id, 0))
@@ -166,7 +166,7 @@ def train(solves: Sequence[Solve], puzzles: Sequence[dict[str, Any]], alpha: flo
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--source", choices=("auto", "neon", "jsonl"), default="auto")
+    ap.add_argument("--source", choices=("auto", "neon", "jsonl"), default="jsonl")
     ap.add_argument("--exclude-player", action="append", default=[], metavar="UUID",
                     help="drop this player's rows (test/fake data); repeatable")
     ap.add_argument("--alpha", type=float, default=DEFAULT_ALPHA)
