@@ -30,7 +30,7 @@ Definition of Ready: Yomi is live with 100+ real solves and no duplicates. Befor
 Tasks (update the checkboxes as you finish them):
 
 - [x] 1. Data quality: dedupe by client `solve_id` (unique constraint + `ON CONFLICT DO NOTHING`; dedupe on read in JSONL mode). Compute `solve_ms`, `backtracks`, `stuck_cell` and `completed` on the server from `events`, ignoring the client's values. Tests for both. (2 h)
-- [ ] 2. Deploy on Vercel + Neon. Run the migrations. Live URL in README. (1.5 h)
+- [x] 2. Deploy on Vercel + Neon. Run the migrations. Live URL in README. (1.5 h) Live: https://yomi-pi-topaz.vercel.app. `ADMIN_TOKEN` is not set yet, so `/api/export` is closed in production.
 - [x] 3. `ml/features.py`: puzzle features and cell features (see the model contract). (2 h)
 - [ ] 4. Difficulty + solve-time model: ridge regression on `log(solve_ms)`, plus a per-player offset. (2.5 h) Unticked: only the solver-effort fallback has run (`trained_on.label = solver_effort`, 13 solves, 1 player, `players: {}`). Re-tick when the human-time path runs on 30+ real solves from 2+ players.
 - [ ] 5. Stuck-point model: logistic regression per cell, top 3. (1.5 h)

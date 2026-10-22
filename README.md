@@ -10,6 +10,8 @@ Connect the numbered dots with one line. Before you start, Yomi predicts your ti
 
 Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 2026**.
 
+**Play it live: https://yomi-pi-topaz.vercel.app**
+
 ## The pitch (Hook → Fix → Proof)
 
 **Hook:** Everyone's played a puzzle and thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that about you before you start. 👀
@@ -27,19 +29,19 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 
 ### Done ✅
 - **Data quality:** dedupe by client `solve_id` (unique constraint + `ON CONFLICT DO NOTHING`). `solve_ms`, `backtracks`, `stuck_cell`, and `completed` are computed on the server, and the client's values are ignored. Tests included.
+- **Deploy:** live on Vercel with Neon Postgres, migrations applied. One real solve on the live URL landed in Neon with the server-derived fields, then was deleted. Next.js upgraded to 16.4.2 for a critical advisory.
 - **Features:** `ml/features.py` builds puzzle and cell features. 11 tests pass.
 - **Solve-time model:** ridge model fitted on solver effort as a stand-in. Human-time path is written but not yet run on real data, so this task is unticked.
 - **Test rows:** the 8 early test solves are excluded from training by row id (kept in the data, not deleted).
 - **Logo:** added to `web/public/logo.png`.
 
 ### Parked / blocked ⏸️
-- **Deploy (Vercel + Neon, live URL):** waiting on Andi.
 - **Stuck-point model:** needs real solves with pause data. Code can ship first; the fit skips below 30 labeled solves.
 - **Evaluation + `reports/sprint2_model.md`:** needs data.
 - **UI: prediction before the solve, predicted vs actual on the result card:** needs the model contract to be final and the label check (`solver_effort` shows steps, not ms).
 
 ### Features to work on next 🛠️
-1. **Get 100+ real solves** (the real blocker). Share the link with friends once it's deployed.
+1. **Get 100+ real solves** (the real blocker). Share the live link with friends.
 2. **Result card:** predicted vs actual, with a "beat the bot" rematch button.
 3. **Stuck-point highlights:** show the 3 predicted cells before the solve.
 4. **Model label check in the UI:** if `trained_on.label` is `solver_effort`, show steps, never ms.
