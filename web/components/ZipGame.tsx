@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findStuck, type GameEvent } from "@/lib/stuck";
+import { addDay, daysBefore, streakState } from "@/lib/streak";
 import { flushQueue, submitSolve } from "@/lib/submit";
 import { isSolved, type Cell, type Dot } from "@/lib/zip";
 
@@ -21,6 +22,7 @@ const DONE_KEY = "yomi_done"; // solved puzzle ids
 const SEEN_KEY = "yomi_seen"; // solved or skipped, drives which puzzle comes next
 const PLAYER_KEY = "yomi_player";
 const ZIP_BEFORE_KEY = "yomi_zip_before";
+const STREAK_KEY = "yomi_streak_days"; // local calendar days with at least one solve
 
 function readList(key: string): string[] {
   try {
@@ -109,6 +111,7 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
 export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[]; coreCount: number }) {
   const [zipBefore, setZipBefore] = useState<boolean | null>(readZipBefore);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
+  const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
   const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount));
   const [path, setPath] = useState<Cell[]>(() => [startCell(puzzle)]);
   const [status, setStatus] = useState<Status>("idle");
@@ -195,6 +198,11 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
         dragging.current = false;
         addToList(SEEN_KEY, puzzle.id);
         setDone(addToList(DONE_KEY, puzzle.id));
+        const days = addDay(readList(STREAK_KEY), new Date());
+        try {
+          localStorage.setItem(STREAK_KEY, JSON.stringify(days));
+        } catch {}
+        setStreakDays(days);
         void send(true, ms);
       }
     },
@@ -322,11 +330,20 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
     );
   }
 
+  const today = new Date();
+  const streak = streakState(streakDays, today);
+  const dayLetter = (back: number) => "SMTWTFS"[new Date(daysBefore(today, back) + "T12:00").getDay()];
+
   const points = path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
   const onPath = new Set(path.map(([r, c]) => r * n + c));
 
   return (
     <div className="flex w-full max-w-md flex-col items-center gap-4">
+      {streak.count > 0 && (
+        <p className="rounded-full bg-orange-500/15 px-3 py-1 font-mono text-xs text-orange-700 dark:text-orange-300">
+          🔥 {streak.count}-day streak
+        </p>
+      )}
       <div className="flex w-full items-baseline justify-between font-mono text-sm">
         <span>
           {isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · {n}×{n}
@@ -410,7 +427,16 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
       </div>
 
       <div className="min-h-24 w-full text-center text-sm" aria-live="polite">
-        {status === "idle" && <p>Start at 1. Connect the dots in order and fill every cell.</p>}
+        {status === "idle" && (
+          <div className="flex flex-col gap-1">
+            <p>Start at 1. Connect the dots in order and fill every cell.</p>
+            {streak.atRisk && (
+              <p className="text-orange-600">
+                Solve one today to keep your {streak.count}-day streak 🔥
+              </p>
+            )}
+          </div>
+        )}
         {status === "solved" && (
           <div className="flex flex-col items-center gap-2">
             <p>
@@ -427,6 +453,21 @@ export default function ZipGame({ puzzles, coreCount }: { puzzles: PublicPuzzle[
               <button onClick={copyShare} className="rounded-md border border-foreground/30 px-3 py-1.5">
                 {copied ? "Copied" : "Copy"}
               </button>
+            </div>
+            <div className="flex flex-col items-center gap-1" aria-label={`Solved ${streak.week.filter(Boolean).length} of the last 7 days`}>
+              <div className="flex gap-1.5">
+                {streak.week.map((hit, i) => (
+                  <div key={i} className="flex flex-col items-center gap-0.5">
+                    <span
+                      className={`h-5 w-5 rounded-full border ${hit ? "border-orange-500 bg-orange-500" : "border-foreground/25"} ${i === 6 ? "ring-2 ring-orange-300" : ""}`}
+                    />
+                    <span className="font-mono text-[10px] opacity-50">{dayLetter(6 - i)}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs">
+                {streak.count === 1 ? "Day 1. Come back tomorrow to start a streak." : `${streak.count} days in a row 🔥 Come back tomorrow to keep it.`}
+              </p>
             </div>
             <p className="text-xs opacity-60">
               {submit === "sending" && "Saving…"}

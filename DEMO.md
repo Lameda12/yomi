@@ -21,3 +21,4 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.
 - *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /stats updates live.
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
+- *Why would anyone come back?* A daily streak: a 🔥 chip, plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
