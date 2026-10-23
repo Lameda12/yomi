@@ -8,6 +8,7 @@ import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
 import { flushQueue, submitSolve } from "@/lib/submit";
 import { isSolved, type Cell, type Dot } from "@/lib/zip";
+import GameBackground, { type BgEvent } from "./GameBackground";
 import NameForm from "./NameForm";
 
 export interface PublicPuzzle {
@@ -171,6 +172,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [extremeWins, setExtremeWins] = useState(readWins);
   const [medians, setMedians] = useState<Record<string, { median_ms: number; n: number }> | null>(null);
   const [extremeWin, setExtremeWin] = useState<{ marginMs: number; limitMs: number } | null>(null);
+  const [bgEvent, setBgEvent] = useState<BgEvent | null>(null); // a win or a timeout, for the background to react to
   const [lockedLimit, setLockedLimit] = useState<number | null>(null); // the running attempt's clock, fixed at the first move
   const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
 
@@ -271,6 +273,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setPath(a.path);
     setElapsed(a.limitMs);
     setStatus("timeout");
+    setBgEvent({ kind: "timeout", id: Date.now() });
     setExtremeWins(0);
     writeLocal(WINS_KEY, "0");
   }, [send, puzzle]);
@@ -338,6 +341,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         }
         setElapsed(ms);
         setStatus("solved");
+        setBgEvent({ kind: "win", id: Date.now() });
         setStuck(findStuck(a.events).cell);
         dragging.current = false;
         addToList(SEEN_KEY, puzzle.id);
@@ -525,7 +529,12 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const points = path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
   const onPath = new Set(path.map(([r, c]) => r * n + c));
 
+  // Extreme only: how much of the clock is gone, 0 to 1. It drives the pulse and the warning colour.
+  const urgency = mode === "extreme" && status === "playing" && limit > 0 ? Math.min(1, elapsed / limit) : 0;
+
   return (
+    <>
+    <GameBackground extreme={mode === "extreme"} urgency={urgency} event={bgEvent} />
     <div
       className={demo ? "flex flex-col items-center gap-3 text-lg" : "flex w-full max-w-md flex-col items-center gap-4"}
       style={demo ? { width: "min(94vw, 52vh)" } : undefined}
@@ -540,7 +549,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           {isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · {n}×{n}
         </span>
         <span className={`tabular-nums ${demo ? "text-5xl" : "text-2xl"}`}>{clock(elapsed)}</span>
-        <span className="opacity-60">{done.length} solved</span>
+        <span className="opacity-70">{done.length} solved</span>
       </div>
 
       {!demo && (
@@ -595,7 +604,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               style={{ width: `${limit > 0 ? Math.min(100, (100 * remaining) / limit) : 0}%` }}
             />
           </div>
-          <p className="text-[11px] opacity-60">{limitInfo.ready ? `${basis}. Clock starts on your first move.` : "One moment."}</p>
+          <p className="text-[11px] opacity-70">{limitInfo.ready ? `${basis}. Clock starts on your first move.` : "One moment."}</p>
         </div>
       )}
 
@@ -615,7 +624,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             <button onClick={retry} autoFocus className="min-h-11 rounded-lg bg-orange-500 px-8 py-2 text-lg font-semibold text-white">
               Retry
             </button>
-            <p className="text-xs opacity-60">Press Enter</p>
+            <p className="text-xs opacity-70">Press Enter</p>
           </div>
         )}
         <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${n}, 1fr)` }}>
@@ -776,7 +785,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                     <span
                       className={`h-5 w-5 rounded-full border ${hit ? "border-orange-500 bg-orange-500" : "border-foreground/25"} ${i === 6 ? "ring-2 ring-orange-300" : ""}`}
                     />
-                    <span className="font-mono text-[10px] opacity-50">{dayLetter(6 - i)}</span>
+                    <span className="font-mono text-[10px] opacity-70">{dayLetter(6 - i)}</span>
                   </div>
                 ))}
               </div>
@@ -785,7 +794,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               </p>
             </div>
             </>)}
-            <p className="text-xs opacity-60">
+            <p className="text-xs opacity-70">
               {submit === "sending" && "Saving…"}
               {submit === "saved" && "Solve logged. Thank you."}
               {submit === "queued" && "Couldn't reach the server just now. This solve is saved here and will be sent on your next visit."}
@@ -795,5 +804,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         )}
       </div>
     </div>
+    </>
   );
 }
