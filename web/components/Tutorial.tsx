@@ -67,7 +67,7 @@ export default function Tutorial({ onClose }: { onClose: () => void }) {
   const points = state.path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="How to play" className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-background/95 p-4" data-testid="tutorial">
+    <div role="dialog" aria-modal="true" aria-label="How to play" className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-background p-4" data-testid="tutorial">
       <div className="flex w-full max-w-xs flex-col items-center gap-3">
         <div className="flex w-full items-center justify-between font-mono text-xs">
           <span className="opacity-70">How to play · {stage + 1}/{TUTORIAL_STEPS.length}</span>
