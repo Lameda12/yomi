@@ -11,6 +11,7 @@ import {
   tutorialStart,
   tutorialUndo,
 } from "@/lib/tutorial";
+import Link from "next/link";
 import type { Cell } from "@/lib/zip";
 import PathLine from "./PathLine";
 
@@ -131,6 +132,12 @@ export default function Tutorial({ onClose }: { onClose: () => void }) {
             )}
           </div>
         )}
+        <p className="text-center text-xs opacity-70">
+          Yomi saves your moves anonymously.{" "}
+          <Link href="/what-we-store" className="underline">
+            What we store
+          </Link>
+        </p>
       </div>
     </div>
   );
