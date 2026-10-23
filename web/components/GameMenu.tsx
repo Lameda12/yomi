@@ -92,6 +92,9 @@ export default function GameMenu(p: MenuProps) {
         <Link href="/board" className={row}>
           Most Unpredictable in Yomi
         </Link>
+        <Link href="/what-we-store" className={row}>
+          What we store
+        </Link>
         <div className="flex justify-center">
           <ChangeName />
         </div>

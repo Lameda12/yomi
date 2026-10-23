@@ -21,7 +21,8 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 1. They land straight on a puzzle with a 3x3 how-to-play on top: drag 1 to 2, undo, fill every cell, dots in order. One tap on **Skip** closes it. It shows once per browser, and **Menu > How to play** reopens it.
 2. The tutorial is practice only: it sends nothing to the server, so it never creates a solve, never shows in /stats or the board, and never reaches training data.
 3. The main screen is the timer, the prediction line, the grid and Undo/Reset. Mode (Regular/Extreme), skip, stats, the board, change name, streak and the privacy note are in **Menu**.
-4. The nickname is optional and never blocks play: after the first solve the card asks "Want your name on the board?", with **No thanks** as the main button.
+4. **What we store** (linked from the first-run screen, the footer and the menu, at `/what-we-store`) lists every field saved, why, and what is never saved (email, account, IP address, cookies, analytics). It is generated from one list that a test checks against the real migrations, API validation, browser storage keys, rate limits and logging, so it cannot drift from the code.
+5. The nickname is optional and never blocks play: after the first solve the card asks "Want your name on the board?", with **No thanks** as the main button.
 
 ## Prediction and result card (regular screen)
 
