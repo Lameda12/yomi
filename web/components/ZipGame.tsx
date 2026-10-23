@@ -7,7 +7,7 @@ import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
 import { flushQueue, submitSolve } from "@/lib/submit";
-import { isSolved, type Cell, type Dot } from "@/lib/zip";
+import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
 import NameForm from "./NameForm";
 
@@ -359,34 +359,11 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, limitInfo, timeUp],
   );
 
-  // Try to move the path head to `target`: undo if it is on the path already,
-  // otherwise extend one cell at a time along a straight line (fast drags skip cells).
+  // Drag the path head onto `target`: see planMove in lib/zip.ts.
   const moveTo = useCallback(
     (target: Cell) => {
-      const cur = attempt.current.path;
-      const at = cur.findIndex(([r, c]) => r === target[0] && c === target[1]);
-      if (at >= 0) {
-        if (at < cur.length - 1) commit(cur.slice(0, at + 1), "undo");
-        return;
-      }
-      const [hr, hc] = cur[cur.length - 1];
-      if (hr !== target[0] && hc !== target[1]) return; // diagonal: wait for a clear direction
-      const dr = Math.sign(target[0] - hr), dc = Math.sign(target[1] - hc);
-      const visited = new Set(cur.map(([r, c]) => r * n + c));
-      let nextLabel = 1 + cur.filter(([r, c]) => labelAt.has(r * n + c)).length;
-      const next = cur.slice();
-      let r = hr, c = hc;
-      while (r !== target[0] || c !== target[1]) {
-        r += dr;
-        c += dc;
-        const key = r * n + c;
-        const label = labelAt.get(key);
-        if (visited.has(key) || (label !== undefined && label !== nextLabel)) break;
-        if (label !== undefined) nextLabel++;
-        visited.add(key);
-        next.push([r, c]);
-      }
-      if (next.length > cur.length) commit(next, "extend");
+      const move = planMove(n, labelAt, attempt.current.path, target);
+      if (move) commit(move.path, move.kind);
     },
     [commit, labelAt, n],
   );

@@ -198,3 +198,33 @@ export function isSolved(n: number, dots: Dot[], path: Cell[]): boolean {
   }
   return nxt === dots.length + 1;
 }
+
+export type Move = { kind: "undo" | "extend"; path: Cell[] };
+
+/**
+ * What dragging the path head onto `target` does: undo if the cell is already on the path, otherwise extend one
+ * cell at a time along a straight line (fast drags skip cells), stopping at a visited cell or a dot out of order.
+ * `labelAt` maps `row * n + col` to a dot label. Null when nothing changes.
+ */
+export function planMove(n: number, labelAt: Map<number, number>, cur: Cell[], target: Cell): Move | null {
+  const at = cur.findIndex(([r, c]) => r === target[0] && c === target[1]);
+  if (at >= 0) return at < cur.length - 1 ? { kind: "undo", path: cur.slice(0, at + 1) } : null;
+  const [hr, hc] = cur[cur.length - 1];
+  if (hr !== target[0] && hc !== target[1]) return null; // diagonal: wait for a clear direction
+  const dr = Math.sign(target[0] - hr), dc = Math.sign(target[1] - hc);
+  const visited = new Set(cur.map(([r, c]) => r * n + c));
+  let nextLabel = 1 + cur.filter(([r, c]) => labelAt.has(r * n + c)).length;
+  const next = cur.slice();
+  let r = hr, c = hc;
+  while (r !== target[0] || c !== target[1]) {
+    r += dr;
+    c += dc;
+    const key = r * n + c;
+    const label = labelAt.get(key);
+    if (visited.has(key) || (label !== undefined && label !== nextLabel)) break;
+    if (label !== undefined) nextLabel++;
+    visited.add(key);
+    next.push([r, c]);
+  }
+  return next.length > cur.length ? { kind: "extend", path: next } : null;
+}
