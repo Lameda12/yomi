@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
+import { clock } from "@/lib/clock";
+import { explainGap, targetCopy } from "@/lib/explain";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
 import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
@@ -11,6 +14,7 @@ import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
 import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
 import GameMenu from "./GameMenu";
+import StreakChip from "./StreakChip";
 import NameForm from "./NameForm";
 import Tutorial from "./Tutorial";
 
@@ -119,11 +123,6 @@ function startCell(p: PublicPuzzle): Cell {
   return [d[0], d[1]];
 }
 
-function clock(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
 // Mutable per-attempt state. Pointer events fire faster than renders, so the
 // source of truth lives in a ref and `path` state mirrors it for drawing.
 interface Attempt {
@@ -169,6 +168,8 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [backtracks, setBacktracks] = useState(0);
   const [submit, setSubmit] = useState<Submit>("none");
   const [stuck, setStuck] = useState<Cell | null>(null);
+  // Facts about the solve that just ended, for the result card. Cleared with the next attempt.
+  const [solveInfo, setSolveInfo] = useState<{ pauseMs: number | null; firstSolve: boolean; mode: Mode; bestMs: number | null; previousBest: number | null; newBest: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
   // Predicted stuck cells arrive only after the solve ends, tagged with their puzzle so a late reply is ignored.
   const [predStuck, setPredStuck] = useState<{ id: string; cells: Cell[] } | null>(null);
@@ -350,7 +351,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         setElapsed(ms);
         setStatus("solved");
         setBgEvent({ kind: "win", id: Date.now() });
-        setStuck(findStuck(a.events).cell);
+        const { cell: stuckCell, maxPauseMs } = findStuck(a.events);
+        setStuck(stuckCell);
+        // Personal best per grid size and mode, on this device only. The demo screen has no "you", so no best.
+        const key = bestKey(n, a.mode);
+        const rec = demo ? null : recordBest(readBest(), key, ms);
+        if (rec) writeBest(rec.map);
+        setSolveInfo({
+          pauseMs: maxPauseMs,
+          firstSolve: demo || readList(DONE_KEY).length === 0, // each demo volunteer is a fresh player
+          mode: a.mode,
+          bestMs: rec ? (rec.map[key] ?? null) : null,
+          previousBest: rec?.previous ?? null,
+          newBest: rec?.isNew ?? false,
+        });
         dragging.current = false;
         addToList(SEEN_KEY, puzzle.id);
         setDone(addToList(DONE_KEY, puzzle.id));
@@ -453,6 +467,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setBacktracks(0);
     setSubmit("none");
     setStuck(null);
+    setSolveInfo(null);
     setPredStuck(null);
     setExtremeWin(null);
     setLockedLimit(null);
@@ -469,6 +484,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setBacktracks(0);
     setSubmit("none");
     setStuck(null);
+    setSolveInfo(null);
     setLockedLimit(null);
   }, [puzzle]);
 
@@ -565,17 +581,21 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         </div>
       ) : (
         <div className="flex w-full items-center justify-between">
-          <span className="font-mono text-3xl tabular-nums" aria-label="Time">
-            {clock(elapsed)}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-3xl tabular-nums" aria-label="Time">
+              {clock(elapsed)}
+            </span>
+            {/* once solved, the result card shows the streak instead */}
+            <StreakChip count={status === "solved" ? 0 : streak.count} atRisk={streak.atRisk} />
+          </div>
           <button onClick={() => setMenuOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4 py-2 text-sm" data-testid="menu-button">
             Menu
           </button>
         </div>
       )}
 
-      {prediction && predicted && status !== "solved" && (
-        <p className={demo ? "text-center text-xl leading-snug" : "text-center text-xs"} data-testid="prediction">
+      {prediction && predicted && status !== "solved" && (demo ? (
+        <p className="text-center text-xl leading-snug" data-testid="prediction">
           {prediction.label === "human_time" ? (
             <>Yomi predicts <b>{showPrediction(prediction, predicted.value)}</b>. Can you beat it?</>
           ) : (
@@ -585,7 +605,12 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             </>
           )}
         </p>
-      )}
+      ) : (
+        <div className="w-full rounded-xl border-2 border-orange-500/40 bg-orange-500/10 px-3 py-2 text-center" data-testid="prediction">
+          <p className="text-base font-bold leading-snug">{targetCopy(prediction.label, predicted.value, difficultyWord(prediction, puzzle.id)).headline}</p>
+          <p className="text-xs opacity-80">{targetCopy(prediction.label, predicted.value, difficultyWord(prediction, puzzle.id)).note}</p>
+        </div>
+      ))}
 
       {limitInfo && (
         <div className="flex w-full flex-col gap-1" data-testid="countdown">
@@ -767,6 +792,25 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                 </>
               )}
             </p>
+            {!demo && solveInfo && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {solveInfo.newBest && solveInfo.previousBest !== null && (
+                  <span className="rounded-full bg-green-600 px-3 py-1 text-xs font-bold text-white" data-testid="new-best">
+                    New best! Was {clock(solveInfo.previousBest)}
+                  </span>
+                )}
+                {solveInfo.bestMs !== null && (
+                  <span className="font-mono text-xs opacity-70" data-testid="best">
+                    {solveInfo.newBest
+                      ? `Best ${n}×${n} ${solveInfo.mode}: ${clock(solveInfo.bestMs)}`
+                      : solveInfo.previousBest === null
+                        ? `First ${n}×${n} ${solveInfo.mode} solve. Best to beat: ${clock(solveInfo.bestMs)}`
+                        : `Best ${n}×${n} ${solveInfo.mode}: ${clock(solveInfo.bestMs)}`}
+                  </span>
+                )}
+                <StreakChip count={streak.count} atRisk={false} />
+              </div>
+            )}
             {prediction && predicted && (
               <p className={demo ? "text-xl" : "text-sm"} data-testid="pred-vs-actual">
                 {prediction.label === "human_time" ? (
@@ -781,6 +825,19 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                     Yomi predicted <b>{showPrediction(prediction, predicted.value)}</b> for a computer (not a time). You: <b>{clock(elapsed)}</b>.
                   </>
                 )}
+              </p>
+            )}
+            {prediction && predicted && solveInfo && (
+              <p className={demo ? "text-lg" : "text-sm"} data-testid="gap-line">
+                {explainGap({
+                  actualMs: elapsed,
+                  predicted: { value: predicted.value, unit: predicted.unit },
+                  label: prediction.label,
+                  backtracks,
+                  pause: solveInfo.pauseMs === null ? null : { ms: solveInfo.pauseMs, cell: stuck },
+                  dots,
+                  firstTime: solveInfo.firstSolve,
+                })}
               </p>
             )}
             {predStuck?.id === puzzle.id && (
