@@ -28,12 +28,12 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - **Before the solve** the prediction sits in a highlighted box above the grid. With a human-time model it reads "Target: beat 0:42". While the model is the solver-effort stand-in it reads "Yomi's read: on the easier side. Can you make it look easy?" with a note that the number is solver steps for a computer, not a time. Say that out loud.
 - **Above the grid** one line states the objective: "Connect 1 to N in order and fill every cell".
 - **After the solve**, with a human-time model, the result card leads with the percent as a big number ("40% faster than predicted") and the explanation under it. With the solver-effort model there is no percentage; the card keeps the plain line that the model is still learning from real players. The explanation is one template line, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the model is still learning from real players.
-- **Personal best** per grid size and mode (Regular and Extreme are separate), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size and mode just shows the time to beat. The demo screen has no personal best.
+- **Personal best** per grid size (Regular only), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size just shows the time to beat. The demo screen has no personal best.
 
 ## The finish (regular screen)
 
 - The path draws smoothly: the line grows to each new cell and eases back when you undo or reset.
-- Finishing a grid fires a short spark burst (under a second) from the last cell, and the line turns green. Finishing an Extreme grid after the clock gives a subtler version. If the clock simply runs out there is no effect, just the Time's up card.
+- Finishing a grid fires a short spark burst (under a second) from the last cell, and the line turns green. Each Extreme solve gets a lighter version, since the next puzzle follows at once.
 - **Next puzzle** is the one orange button on the result card. It stays pinned to the bottom of the screen and has focus, so Enter works on a keyboard.
 - With `prefers-reduced-motion` the path snaps and there is no spark effect.
 
@@ -43,6 +43,15 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - That page shows the time, backtracks and mode **as the server stored them** (derived from the move log), never numbers typed into the URL, so a link cannot be edited into a fake time. It shows the player's nickname if they set one, otherwise "Anon xxxx". It never shows the anonymous player id or the move log, is not indexed by search engines, and has a generated link preview image.
 - It only compares with Yomi's guess when the model predicted a time. While the model is the solver-effort stand-in it says nothing about a prediction.
 - If the solve could not be saved yet, the message links to the site instead, and the card says why.
+
+## Extreme (the sprint)
+
+- Switch with **Menu > Extreme**. The first time, a rules card explains it; **Rules** reopens it. Every start shows a one-line reminder: the clock starts when you tap Start and each solved puzzle scores 1.
+- The grid is **blurred** until you tap **Start**, so nobody can read the puzzle ahead of the clock. Pick 30 s, 1, 2 or 5 min, or a custom time from 10 seconds to 10 minutes (seconds or minutes). The choice is remembered.
+- Once started, the clock counts down (tenths and red in the last 10 s, and the background pulses faster). Solve a puzzle: it scores 1 and the next one appears right away. Same puzzles in the same order every run, smallest grids first. Menu > Skip drops the puzzle on screen without a score.
+- When time is up the puzzle in progress does not count (it is stored as unfinished), the grid freezes, and a card shows the score, a "New best" badge if it beats your best for that run length, **Play again**, **Share score** and **Back to Regular**.
+- Scores and bests live on the device only. Each solve in a run is still stored like any other (with `mode = 'extreme'`, no per-puzzle clock) and is **not used to train the model**. There is no server-side sprint board yet; the board page only has Most Unpredictable in Yomi.
+- The old per-puzzle clock (80% of the predicted time, tightening by 5 points per win) is gone.
 
 ## Live demo screen (`/demo`)
 

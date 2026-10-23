@@ -7,10 +7,13 @@ import { explainGap, gapParts, objectiveLine, targetCopy, type GapInput } from "
 import { finishKind } from "@/lib/finish";
 import { sharePath, shareMessage } from "@/lib/share";
 import { findStuck, type GameEvent } from "@/lib/stuck";
-import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
 import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
+import {
+  durationLabel, formatRemaining, markSprintRulesSeen, readScores, readSprintSeconds, recordScore, shareScoreMessage, sprintOrder, sprintRulesSeen,
+  writeScores, writeSprintSeconds,
+} from "@/lib/sprint";
 import { flushQueue, submitSolve } from "@/lib/submit";
 import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
 import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
@@ -18,6 +21,7 @@ import GameBackground, { type BgEvent } from "./GameBackground";
 import FinishEffect, { type FinishEvent } from "./FinishEffect";
 import GameMenu from "./GameMenu";
 import PathLine from "./PathLine";
+import { SprintOver, SprintReady, SprintRules } from "./SprintPanels";
 import StreakChip from "./StreakChip";
 import NameForm from "./NameForm";
 import Tutorial from "./Tutorial";
@@ -28,9 +32,15 @@ export interface PublicPuzzle {
   dots: Dot[];
 }
 
-type Status = "idle" | "playing" | "solved" | "timeout"; // timeout: extreme mode, the clock ran out
+type Status = "idle" | "playing" | "solved";
 type Mode = "regular" | "extreme";
 type Submit = "none" | "sending" | "saved" | "queued" | "failed";
+
+// Extreme mode is a sprint: as many puzzles as you can before the clock runs out.
+type Run =
+  | { phase: "ready" } // grid blurred, picking a time
+  | { phase: "running"; startMs: number; durationMs: number; index: number; score: number } // index: which puzzle of the fixed order is on screen
+  | { phase: "over"; durationMs: number; score: number; previousBest: number | null; newBest: boolean; cleared: boolean };
 
 const MAX_EVENTS = 5000;
 const MIN_LOG_MS = 1_000; // the API rejects anything outside 1 s .. 30 min
@@ -40,7 +50,6 @@ const SEEN_KEY = "yomi_seen"; // solved or skipped, drives which puzzle comes ne
 const ZIP_BEFORE_KEY = "yomi_zip_before";
 const STREAK_KEY = "yomi_streak_days"; // local calendar days with at least one solve
 const MODE_KEY = "yomi_mode"; // regular (default) or extreme
-const WINS_KEY = "yomi_extreme_wins"; // consecutive extreme wins; each one tightens the clock
 
 function readList(key: string): string[] {
   try {
@@ -64,15 +73,6 @@ function readMode(): Mode {
     return localStorage.getItem(MODE_KEY) === "extreme" ? "extreme" : "regular";
   } catch {
     return "regular";
-  }
-}
-
-function readWins(): number {
-  try {
-    const n = Number(localStorage.getItem(WINS_KEY));
-    return Number.isInteger(n) && n > 0 ? n : 0;
-  } catch {
-    return 0;
   }
 }
 
@@ -139,7 +139,7 @@ interface Attempt {
   lastWasUndo: boolean;
   device: "mouse" | "touch" | null;
   mode: Mode; // locked at the first move, so the toggle cannot change an attempt in progress
-  limitMs: number | null; // extreme mode: the clock this attempt plays against, locked at the first move
+  finished: boolean; // solved, so it is not logged again as unfinished when a sprint ends
 }
 
 const newAttempt = (p: PublicPuzzle): Attempt => ({
@@ -152,7 +152,7 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
   lastWasUndo: false,
   device: null,
   mode: "regular",
-  limitMs: null,
+  finished: false,
 });
 
 export default function ZipGame({ puzzles, coreCount, prediction, demo = false }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null; demo?: boolean }) {
@@ -165,7 +165,10 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [menuOpen, setMenuOpen] = useState(false);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
-  const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount, undefined, demo));
+  // Regular is the default. Extreme is the sprint; the presenter screen is always Regular.
+  const [mode, setMode] = useState<Mode>(() => (demo ? "regular" : readMode()));
+  const sprintPuzzles = useMemo(() => sprintOrder(puzzles), [puzzles]);
+  const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => (mode === "extreme" ? sprintPuzzles[0] : pickPuzzle(puzzles, coreCount, undefined, demo)));
   const [path, setPath] = useState<Cell[]>(() => [startCell(puzzle)]);
   const [status, setStatus] = useState<Status>("idle");
   const [elapsed, setElapsed] = useState(0);
@@ -181,15 +184,24 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   // Demo screen only: each volunteer is a fresh anonymous player (so one person at the keyboard is not one "player"
   // for every volunteer), and the stuck heatmap of earlier solvers is revealed after the solve.
   const [volunteer, setVolunteer] = useState(() => crypto.randomUUID());
-  // Extreme mode: Regular stays the default. Wins in a row tighten the clock; "medians" is the crowd's typical time.
-  const [mode, setMode] = useState<Mode>(() => (demo ? "regular" : readMode()));
-  const [extremeWins, setExtremeWins] = useState(readWins);
-  const [medians, setMedians] = useState<Record<string, { median_ms: number; n: number }> | null>(null);
-  const [extremeWin, setExtremeWin] = useState<{ marginMs: number; limitMs: number } | null>(null);
+  // The sprint run. The ref mirrors the state so timers and handlers always see the latest run.
+  const [run, setRunState] = useState<Run | null>(() => (mode === "extreme" ? { phase: "ready" } : null));
+  const runRef = useRef<Run | null>(run);
+  const setRun = useCallback((r: Run | null) => {
+    runRef.current = r;
+    setRunState(r);
+  }, []);
+  const [sprintSecs, setSprintSecs] = useState(readSprintSeconds); // the chosen run length
+  const [rulesSeen, setRulesSeen] = useState(sprintRulesSeen);
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [tick, setTick] = useState(0); // performance.now() at the last clock tick, so the countdown re-renders
   const [finish, setFinish] = useState<FinishEvent | null>(null); // the spark burst over the board
   const [bgEvent, setBgEvent] = useState<BgEvent | null>(null); // a win or a timeout, for the background to react to
-  const [lockedLimit, setLockedLimit] = useState<number | null>(null); // the running attempt's clock, fixed at the first move
   const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
+
+  // Board input is locked after a solve, and in a sprint unless the clock is running (blurred before Start, frozen after).
+  const locked = status === "solved" || (mode === "extreme" && run?.phase !== "running");
+  const canChangeMode = run?.phase === "running" ? false : mode === "extreme" || status === "idle";
 
   const attempt = useRef<Attempt>(newAttempt(puzzle));
   const dragging = useRef(false);
@@ -203,32 +215,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: prediction.label === "human_time" ? ("ms" as const) : ("solver_steps" as const), version: prediction.version };
   }, [prediction, puzzle.id, demo, volunteer]);
-
-  // Only needed (and only fetched) in extreme mode, when the model cannot give a time in milliseconds.
-  useEffect(() => {
-    if (mode !== "extreme" || medians) return;
-    let alive = true;
-    fetch("/api/medians")
-      .then((res) => (res.ok ? (res.json() as Promise<Record<string, { median_ms: number; n: number }>>) : {}))
-      .catch(() => ({}))
-      .then((m) => {
-        if (alive) setMedians(m);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [mode, medians]);
-
-  // The clock for this puzzle: 80% (less after each consecutive win, floor 50%) of the model's time for this player,
-  // else of the puzzle's crowd median, else 60 s to start.
-  const limitInfo = useMemo(() => {
-    if (mode !== "extreme") return null;
-    const crowd = medians?.[puzzle.id];
-    const modelMs = prediction?.label === "human_time" && predicted?.unit === "ms" ? predicted.value : null;
-    const base = extremeBase({ modelMs, crowdMedianMs: crowd?.median_ms ?? null });
-    // ready: the model or the crowd data has arrived, so the clock will not change under the player's hands.
-    return { ms: extremeLimit(base.ms, extremeWins), source: base.source, factor: extremeFactor(extremeWins), crowdN: crowd?.n ?? 0, ready: modelMs !== null || medians !== null };
-  }, [mode, prediction, predicted, medians, puzzle.id, extremeWins]);
 
   const { n, dots } = puzzle;
   const number = puzzles.findIndex((p) => p.id === puzzle.id) + 1;
@@ -270,7 +256,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         events: a.events,
         played_zip_before: readZipBefore(),
         mode: a.mode,
-        extreme_limit_ms: a.mode === "extreme" ? a.limitMs : null,
+        extreme_limit_ms: null, // a sprint has one clock for the whole run, not one per puzzle
         prediction: predicted ? { value: predicted.value, unit: predicted.unit, model_version: predicted.version } : null,
       });
       if (completed) setSubmit(result);
@@ -278,27 +264,90 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     [puzzle.id, puzzle.n, predicted, demo, volunteer],
   );
 
-  // Extreme mode: the clock ran out. Log the attempt, reset the grid, and offer an instant Retry.
-  // `finishedAt` is set when the grid was completed, but after the clock: a loss that still gets a subtle spark.
-  // When the clock simply ran out there is nothing to celebrate and no effect.
-  const timeUp = useCallback(
-    (finishedAt?: Cell) => {
+  // Show a puzzle with a fresh attempt: the shared reset for "next puzzle", sprint advances and mode switches.
+  const loadPuzzle = useCallback((p: PublicPuzzle) => {
+    attempt.current = newAttempt(p);
+    dragging.current = false;
+    setPuzzle(p);
+    setPath([startCell(p)]);
+    setStatus("idle");
+    setElapsed(0);
+    setBacktracks(0);
+    setSubmit("none");
+    setStuck(null);
+    setSolveInfo(null);
+    setFinish(null);
+    setPredStuck(null);
+    setCopied(false);
+    setShareFallback(null);
+  }, []);
+
+  // The run is over: the clock ran out, or every puzzle was solved. The puzzle in progress does not count, but it is
+  // still logged as unfinished (giving up is a difficulty signal). The best score for this length stays on this device.
+  const endRun = useCallback(
+    (cleared = false) => {
+      const r = runRef.current;
+      if (!r || r.phase !== "running") return;
       const a = attempt.current;
-      if (a.t0 === null || a.limitMs === null) return;
-      const kind = finishKind(finishedAt ? "late" : "timeout");
-      if (kind && finishedAt) setFinish({ id: Date.now(), kind, at: finishedAt });
+      if (a.t0 !== null && !a.finished) void send(false, performance.now() - a.t0);
       dragging.current = false;
-      void send(false, a.limitMs);
-      a.path = [startCell(puzzle)];
-      setPath(a.path);
-      setElapsed(a.limitMs);
-      setStatus("timeout");
+      const rec = recordScore(readScores(), Math.round(r.durationMs / 1000), r.score);
+      writeScores(rec.map);
+      setRun({ phase: "over", durationMs: r.durationMs, score: r.score, previousBest: rec.previous, newBest: rec.isNew, cleared });
       setBgEvent({ kind: "timeout", id: Date.now() });
-      setExtremeWins(0);
-      writeLocal(WINS_KEY, "0");
     },
-    [send, puzzle],
+    [send, setRun],
   );
+
+  // The next puzzle of the fixed order, or the end of the run when there are no more.
+  const advanceSprint = useCallback(() => {
+    const r = runRef.current;
+    if (!r || r.phase !== "running") return;
+    const p = sprintPuzzles[r.index];
+    if (!p) endRun(true);
+    else loadPuzzle(p);
+  }, [sprintPuzzles, loadPuzzle, endRun]);
+
+  const startRun = () => {
+    const startMs = performance.now();
+    setTick(startMs);
+    setRun({ phase: "running", startMs, durationMs: sprintSecs * 1000, index: 0, score: 0 });
+  };
+
+  const playAgain = () => {
+    loadPuzzle(sprintPuzzles[0]);
+    setRun({ phase: "ready" });
+  };
+
+  // Skip the puzzle on screen: no score, and the next one comes up. The clock keeps running.
+  const skipSprint = () => {
+    const r = runRef.current;
+    if (!r || r.phase !== "running" || status === "solved") return;
+    const a = attempt.current;
+    if (a.t0 !== null && !a.finished) void send(false, performance.now() - a.t0);
+    setRun({ ...r, index: r.index + 1 });
+    const p = sprintPuzzles[r.index + 1];
+    if (!p) endRun(true);
+    else loadPuzzle(p);
+  };
+
+  // The run clock: tick every 100 ms and end the run when the time is gone.
+  useEffect(() => {
+    if (run?.phase !== "running") return;
+    const id = setInterval(() => {
+      const now = performance.now();
+      setTick(now);
+      if (now - run.startMs >= run.durationMs) endRun();
+    }, 100);
+    return () => clearInterval(id);
+  }, [run, endRun]);
+
+  // A solved puzzle shows its spark for a moment, then the next one appears.
+  useEffect(() => {
+    if (mode !== "extreme" || status !== "solved" || run?.phase !== "running") return;
+    const id = setTimeout(advanceSprint, 450);
+    return () => clearTimeout(id);
+  }, [mode, status, run, advanceSprint]);
 
   // Ask for the predicted stuck cells once the solve is over. Any failure just means no overlay.
   const fetchStuck = useCallback(async (id: string) => {
@@ -331,9 +380,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       if (a.t0 === null) {
         a.t0 = now;
         a.startedAtMs = Date.now();
-        a.mode = limitInfo ? "extreme" : "regular";
-        a.limitMs = limitInfo?.ms ?? null;
-        setLockedLimit(a.limitMs);
+        a.mode = mode === "extreme" ? "extreme" : "regular";
         setStatus("playing");
       }
       if (kind !== "extend" && !a.lastWasUndo) {
@@ -350,26 +397,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
 
       if (kind === "extend" && isSolved(n, dots, next)) {
         const ms = now - a.t0;
-        if (a.mode === "extreme" && a.limitMs !== null && ms > a.limitMs) {
-          timeUp(next[next.length - 1]); // finished, but after the clock: not a win
+        const r = runRef.current;
+        if (a.mode === "extreme" && (!r || r.phase !== "running" || now - r.startMs >= r.durationMs)) {
+          endRun(); // finished after the clock ran out: it does not count
           return;
-        }
-        if (a.mode === "extreme" && a.limitMs !== null) {
-          setExtremeWin({ marginMs: a.limitMs - ms, limitMs: a.limitMs });
-          setExtremeWins((w) => {
-            writeLocal(WINS_KEY, String(w + 1));
-            return w + 1;
-          });
         }
         setElapsed(ms);
         setStatus("solved");
         setBgEvent({ kind: "win", id: Date.now() });
-        setFinish({ id: Date.now(), kind: finishKind("win")!, at: next[next.length - 1] });
+        setFinish({ id: Date.now(), kind: finishKind(a.mode === "extreme" ? "sprint" : "win"), at: next[next.length - 1] });
         const { cell: stuckCell, maxPauseMs } = findStuck(a.events);
         setStuck(stuckCell);
         // Personal best per grid size and mode, on this device only. The demo screen has no "you", so no best.
         const key = bestKey(n, a.mode);
-        const rec = demo ? null : recordBest(readBest(), key, ms);
+        const rec = demo || a.mode === "extreme" ? null : recordBest(readBest(), key, ms);
         if (rec) writeBest(rec.map);
         setSolveInfo({
           solveId: a.solveId,
@@ -388,12 +429,14 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           localStorage.setItem(STREAK_KEY, JSON.stringify(days));
         } catch {}
         setStreakDays(days);
+        a.finished = true;
+        if (a.mode === "extreme" && r && r.phase === "running") setRun({ ...r, score: r.score + 1, index: r.index + 1 });
         void send(true, ms);
-        void fetchStuck(puzzle.id);
+        if (a.mode !== "extreme") void fetchStuck(puzzle.id); // the result card is the only place stuck cells show
         if (demo) void fetchHeat(puzzle.id);
       }
     },
-    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, limitInfo, timeUp],
+    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, mode, endRun, setRun],
   );
 
   // Drag the path head onto `target`: see planMove in lib/zip.ts.
@@ -405,16 +448,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     [commit, labelAt, n],
   );
 
-  // The countdown: check the clock every 100 ms while an extreme attempt is running.
-  useEffect(() => {
-    if (status !== "playing" || attempt.current.mode !== "extreme") return;
-    const id = setInterval(() => {
-      const a = attempt.current;
-      if (a.t0 !== null && a.limitMs !== null && performance.now() - a.t0 >= a.limitMs) timeUp();
-    }, 100);
-    return () => clearInterval(id);
-  }, [status, timeUp]);
-
   const cellAt = (e: React.PointerEvent): Cell | null => {
     const rect = board.current!.getBoundingClientRect();
     const c = Math.floor(((e.clientX - rect.left) / rect.width) * n);
@@ -423,8 +456,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   };
 
   const onDown = (e: React.PointerEvent) => {
-    if (status === "solved" || status === "timeout") return;
-    if (limitInfo && !limitInfo.ready) return; // extreme: wait for the clock to load (a moment) so it cannot change mid-play
+    if (locked) return;
     const cell = cellAt(e);
     if (!cell) return;
     e.preventDefault();
@@ -447,89 +479,53 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   };
 
   const clear = () => {
-    if (status === "solved" || status === "timeout" || attempt.current.path.length <= 1) return;
+    if (locked || attempt.current.path.length <= 1) return;
     commit([startCell(puzzle)], "clear");
   };
 
   // The Undo button: one cell back, the same as dragging back over the path.
   const undo = () => {
-    if (status === "solved" || status === "timeout" || attempt.current.path.length <= 1) return;
+    if (locked || attempt.current.path.length <= 1) return;
     commit(attempt.current.path.slice(0, -1), "undo");
   };
 
+  // Regular and demo: the next puzzle. (A sprint advances by itself, see advanceSprint.)
   const next = () => {
     const a = attempt.current;
     if (status !== "solved") {
-      // Log abandoned attempts too: giving up is a difficulty signal. (A timeout was already logged.)
-      if (a.t0 !== null && status !== "timeout") void send(false, performance.now() - a.t0);
+      // Log abandoned attempts too: giving up is a difficulty signal.
+      if (a.t0 !== null) void send(false, performance.now() - a.t0);
       addToList(SEEN_KEY, puzzle.id);
-      if (a.mode === "extreme" && status === "playing") {
-        setExtremeWins(0); // skipping mid-clock is a loss
-        writeLocal(WINS_KEY, "0");
-      }
     }
     const p = pickPuzzle(puzzles, coreCount, puzzle.id, demo);
     if (demo) {
       setVolunteer(crypto.randomUUID());
       setHeat(null);
     }
-    attempt.current = newAttempt(p);
-    dragging.current = false;
-    setPuzzle(p);
-    setPath([startCell(p)]);
-    setStatus("idle");
-    setElapsed(0);
-    setBacktracks(0);
-    setSubmit("none");
-    setStuck(null);
-    setSolveInfo(null);
-    setFinish(null);
-    setPredStuck(null);
-    setExtremeWin(null);
-    setLockedLimit(null);
-    setCopied(false);
-    setShareFallback(null);
+    loadPuzzle(p);
   };
 
-  // Instant retry after a timeout: same puzzle, fresh attempt, clock waits for the first move again.
-  const retry = useCallback(() => {
-    attempt.current = newAttempt(puzzle);
-    dragging.current = false;
-    setPath([startCell(puzzle)]);
-    setStatus("idle");
-    setElapsed(0);
-    setBacktracks(0);
-    setSubmit("none");
-    setStuck(null);
-    setSolveInfo(null);
-    setFinish(null);
-    setLockedLimit(null);
-  }, [puzzle]);
-
-  // Enter retries too (one key). preventDefault stops a focused Retry button from also firing its own click.
-  useEffect(() => {
-    if (status !== "timeout") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      retry();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [status, retry]);
-
   const chooseMode = (m: Mode) => {
-    if (m === mode || status !== "idle") return;
+    if (m === mode || !canChangeMode) return;
     setMode(m);
     writeLocal(MODE_KEY, m);
+    if (m === "extreme") {
+      loadPuzzle(sprintPuzzles[0]); // every run starts from the same first puzzle, blurred until Start
+      setRun({ phase: "ready" });
+    } else {
+      setRun(null);
+      loadPuzzle(pickPuzzle(puzzles, coreCount, puzzle.id));
+    }
+  };
+
+  const chooseSeconds = (secs: number) => {
+    setSprintSecs(secs);
+    writeSprintSeconds(secs);
   };
 
   // Share this result. Once the solve is saved the message carries /r/<solve id>, a page built from what the server
   // stored. Before that, or if saving failed, it carries the plain site link. Phones get the share sheet, the rest the clipboard.
-  const shareResult = async () => {
-    const origin = window.location.origin;
-    const link = submit === "saved" && solveInfo ? `${origin}${sharePath(solveInfo.solveId)}` : origin;
-    const text = shareMessage(`Yomi #${number}`, elapsed, backtracks, link);
+  const shareOut = async (text: string) => {
     try {
       if (typeof navigator.share === "function") {
         await navigator.share({ text });
@@ -546,6 +542,14 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       setCopied(false);
       setShareFallback(text); // clipboard blocked: the message is selectable on screen
     }
+  };
+  const shareResult = () => {
+    const origin = window.location.origin;
+    const link = submit === "saved" && solveInfo ? `${origin}${sharePath(solveInfo.solveId)}` : origin;
+    return shareOut(shareMessage(`Yomi #${number}`, elapsed, backtracks, link));
+  };
+  const shareScore = () => {
+    if (run?.phase === "over") return shareOut(shareScoreMessage(run.score, Math.round(run.durationMs / 1000), window.location.origin));
   };
 
   const closeTutorial = () => {
@@ -571,21 +575,13 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const gap = gapInput ? gapParts(gapInput) : null;
   const dayLetter = (back: number) => "SMTWTFS"[new Date(daysBefore(today, back) + "T12:00").getDay()];
 
-  const limit = lockedLimit ?? limitInfo?.ms ?? 0;
-  const remaining = status === "playing" ? Math.max(0, limit - elapsed) : status === "timeout" ? 0 : limit;
-  const basis =
-    limitInfo?.source === "model"
-      ? `${Math.round(limitInfo.factor * 100)}% of Yomi's time for you`
-      : limitInfo?.source === "crowd"
-        ? `${Math.round(limitInfo.factor * 100)}% of the typical time (${limitInfo.crowdN} solves)`
-        : limitInfo
-          ? `no data on this puzzle yet, so ${clock(limitInfo.ms)} to start`
-          : "";
-
+  // Sprint clock: what is left (the full length before Start, zero after), and how much of the run is gone for the background.
+  const remainingMs = run?.phase === "running" ? Math.max(0, run.durationMs - (tick - run.startMs)) : run?.phase === "over" ? 0 : sprintSecs * 1000;
+  const sprintScore = run?.phase === "running" || run?.phase === "over" ? run.score : 0;
   const onPath = new Set(path.map(([r, c]) => r * n + c));
 
-  // Extreme only: how much of the clock is gone, 0 to 1. It drives the pulse and the warning colour.
-  const urgency = mode === "extreme" && status === "playing" && limit > 0 ? Math.min(1, elapsed / limit) : 0;
+  // Sprint only: how much of the run is gone, 0 to 1. It drives the background pulse and the warning colour.
+  const urgency = run?.phase === "running" ? Math.min(1, Math.max(0, 1 - remainingMs / run.durationMs)) : 0;
 
   return (
     <>
@@ -594,18 +590,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     {menuOpen && !demo && (
       <GameMenu
         onClose={() => setMenuOpen(false)}
-        puzzleLabel={`${isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · ${n}×${n}`}
+        puzzleLabel={mode === "extreme" ? `Extreme run · ${durationLabel(sprintSecs)}` : `${isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · ${n}×${n}`}
         solved={done.length}
         streak={{ count: streak.count, atRisk: streak.atRisk }}
         mode={mode}
-        canChangeMode={status === "idle"}
+        canChangeMode={canChangeMode}
+        canSkip={mode !== "extreme" || run?.phase === "running"}
         onMode={chooseMode}
         skipLabel={status === "solved" ? "Next puzzle" : "Skip this puzzle"}
         onSkip={() => {
           setMenuOpen(false);
-          next();
+          if (mode === "extreme") skipSprint();
+          else next();
         }}
-        canHowTo={status !== "playing"}
+        canHowTo={status !== "playing" && run?.phase !== "running"}
         onHowTo={() => {
           setMenuOpen(false);
           setTutorial(true);
@@ -627,11 +625,28 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       ) : (
         <div className="flex w-full items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="font-mono text-3xl tabular-nums" aria-label="Time">
-              {clock(elapsed)}
-            </span>
-            {/* once solved, the result card shows the streak instead */}
-            <StreakChip count={status === "solved" ? 0 : streak.count} atRisk={streak.atRisk} />
+            {mode === "extreme" ? (
+              <>
+                <span
+                  className={`font-mono text-3xl tabular-nums ${run?.phase === "running" && remainingMs < 10_000 ? "text-rose-600 motion-safe:animate-pulse" : ""}`}
+                  aria-label="Time left"
+                  data-testid="sprint-clock"
+                >
+                  {formatRemaining(remainingMs)}
+                </span>
+                <span className="rounded-full bg-orange-500/15 px-2.5 py-1 font-mono text-xs text-orange-700 dark:text-orange-300" data-testid="sprint-score">
+                  ✓ {sprintScore}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="font-mono text-3xl tabular-nums" aria-label="Time">
+                  {clock(elapsed)}
+                </span>
+                {/* once solved, the result card shows the streak instead */}
+                <StreakChip count={status === "solved" ? 0 : streak.count} atRisk={streak.atRisk} />
+              </>
+            )}
           </div>
           <button onClick={() => setMenuOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4 py-2 text-sm" data-testid="menu-button">
             Menu
@@ -639,7 +654,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         </div>
       )}
 
-      {prediction && predicted && status !== "solved" && (demo ? (
+      {prediction && predicted && status !== "solved" && mode !== "extreme" && (demo ? (
         <p className="text-center text-xl leading-snug" data-testid="prediction">
           {prediction.label === "human_time" ? (
             <>Yomi predicts <b>{showPrediction(prediction, predicted.value)}</b>. Can you beat it?</>
@@ -657,32 +672,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         </div>
       ))}
 
-      {limitInfo && (
-        <div className="flex w-full flex-col gap-1" data-testid="countdown">
-          <div className="flex items-baseline justify-between font-mono text-xs">
-            <span>{!limitInfo.ready ? "Loading the clock…" : status === "solved" && extremeWin ? "Clock stopped" : `Beat Yomi's clock: ${clock(limit)}`}</span>
-            <span className={remaining < limit * 0.25 && status === "playing" ? "text-rose-600" : ""} data-testid="remaining">
-              {limitInfo.ready ? `${(remaining / 1000).toFixed(1)}s left` : "–"}
-            </span>
-          </div>
-          <div
-            role="progressbar"
-            aria-label="Time left on the clock"
-            aria-valuemin={0}
-            aria-valuemax={Math.round(limit / 1000)}
-            aria-valuenow={Math.round(remaining / 1000)}
-            className="h-3 w-full overflow-hidden rounded-full bg-foreground/10"
-          >
-            <div
-              className={`h-full ${remaining < limit * 0.25 ? "bg-rose-500" : "bg-orange-500"}`}
-              style={{ width: `${limit > 0 ? Math.min(100, (100 * remaining) / limit) : 0}%` }}
-            />
-          </div>
-          <p className="text-[11px] opacity-70">{limitInfo.ready ? `${basis}. Clock starts on your first move.` : "One moment."}</p>
-        </div>
-      )}
-
-      {!demo && status !== "solved" && (
+      {!demo && status !== "solved" && (mode !== "extreme" || run?.phase === "running") && (
         <p className="text-center text-xs opacity-80" data-testid="objective">
           {objectiveLine(dots.length)}
         </p>
@@ -694,20 +684,34 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        className={`relative aspect-square w-full touch-none select-none overflow-hidden rounded-xl border-2 border-foreground/80 bg-background ${status === "timeout" ? "yomi-shake" : ""}`}
+        className={`relative aspect-square w-full touch-none select-none overflow-hidden rounded-xl border-2 border-foreground/80 bg-background ${run?.phase === "over" ? "yomi-shake" : ""}`}
         style={{ WebkitTouchCallout: "none" }}
       >
         <FinishEffect event={finish} n={n} />
-        {status === "timeout" && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 p-4 text-center" data-testid="timeout">
-            <p className="text-2xl font-bold">Time&apos;s up</p>
-            <p className="text-sm opacity-70">The clock was {clock(lockedLimit ?? limit)}. The grid is reset.</p>
-            <button onClick={retry} autoFocus className="min-h-11 rounded-lg bg-orange-500 px-8 py-2 text-lg font-semibold text-white">
-              Retry
-            </button>
-            <p className="text-xs opacity-70">Press Enter</p>
+        {mode === "extreme" && run && run.phase !== "running" && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center overflow-y-auto bg-background/30 p-3 text-center" data-testid="sprint-overlay">
+            {run.phase === "ready" ? (
+              rulesSeen && !rulesOpen ? (
+                <SprintReady seconds={sprintSecs} onSeconds={chooseSeconds} onStart={startRun} onRules={() => setRulesOpen(true)} />
+              ) : (
+                <SprintRules
+                  onGotIt={() => {
+                    markSprintRulesSeen();
+                    setRulesSeen(true);
+                    setRulesOpen(false);
+                  }}
+                />
+              )
+            ) : (
+              <p className="rounded-xl bg-background/80 px-4 py-2 text-3xl font-extrabold">{run.cleared ? "All puzzles cleared" : "Time's up"}</p>
+            )}
           </div>
         )}
+        {/* Before Start the grid is blurred so nobody can read the puzzle ahead of the clock. */}
+        <div
+          className={`absolute inset-0 transition-[filter] duration-200 motion-reduce:transition-none ${mode === "extreme" && run?.phase === "ready" ? "blur-lg" : ""}`}
+          data-testid="board-layer"
+        >
         <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${n}, 1fr)` }}>
           {Array.from({ length: n * n }, (_, i) => (
             <div
@@ -775,6 +779,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             />
           )}
         </svg>
+        </div>
       </div>
 
       {demo ? (
@@ -783,7 +788,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           <div className="flex gap-2">
             <button
               onClick={clear}
-              disabled={status === "solved" || status === "timeout" || path.length <= 1}
+              disabled={locked || path.length <= 1}
               className="min-h-14 rounded-lg border border-foreground/30 px-4 py-2 text-lg disabled:opacity-30"
             >
               Clear
@@ -793,11 +798,11 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             </button>
           </div>
         </div>
-      ) : status === "solved" ? null : (
+      ) : (status === "solved" && mode !== "extreme") || (mode === "extreme" && run?.phase === "over") ? null : (
         <div className="flex w-full gap-2 text-sm">
           <button
             onClick={undo}
-            disabled={status === "timeout" || path.length <= 1}
+            disabled={locked || path.length <= 1}
             className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
             data-testid="undo"
           >
@@ -805,7 +810,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           </button>
           <button
             onClick={clear}
-            disabled={status === "timeout" || path.length <= 1}
+            disabled={locked || path.length <= 1}
             className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
             data-testid="reset"
           >
@@ -816,7 +821,21 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
 
       <div className={`w-full text-center ${demo ? "min-h-20 text-lg" : "text-sm"}`} aria-live="polite">
         {demo && status === "idle" && <p>Start at 1. Connect the dots in order and fill every cell.</p>}
-        {status === "solved" && (
+        {mode === "extreme" && run?.phase === "over" && !demo && (
+          <SprintOver
+            score={run.score}
+            seconds={Math.round(run.durationMs / 1000)}
+            previousBest={run.previousBest}
+            newBest={run.newBest}
+            cleared={run.cleared}
+            onAgain={playAgain}
+            onRegular={() => chooseMode("regular")}
+            onShare={shareScore}
+            copied={copied}
+            fallback={shareFallback}
+          />
+        )}
+        {status === "solved" && mode !== "extreme" && (
           <div className="flex flex-col items-center gap-2">
             {gap?.headline && !demo && (
               <div className="flex flex-col items-center" data-testid="gap-headline">
@@ -831,12 +850,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                   {gap.detail}
                 </p>
               </div>
-            )}
-            {extremeWin && (
-              <p className="text-xl font-bold text-green-600" data-testid="extreme-win">
-                {extremeWin.marginMs < 1000 ? "Beat Yomi's clock by less than a second" : `Beat Yomi's clock by ${clock(extremeWin.marginMs)}`}
-                {extremeWins > 1 && <span className="block text-sm font-normal opacity-80">{extremeWins} in a row. Next clock: {Math.round(extremeFactor(extremeWins) * 100)}%.</span>}
-              </p>
             )}
             <p>
               Solved in <b>{clock(elapsed)}</b> with <b>{backtracks}</b> backtrack{backtracks === 1 ? "" : "s"}.

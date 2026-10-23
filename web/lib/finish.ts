@@ -1,14 +1,14 @@
 // The finish effect: a short spark burst from the cell where the path ended. Pure helpers, shared with the canvas
-// component. Full on a win, subtle when an Extreme grid was finished after the clock, none when the clock ran out.
+// component. Full on a Regular solve, a lighter one on each Extreme (sprint) solve, where the next puzzle follows at once.
 import { stepParticles, type Particle } from "./background.ts";
 
 export type FinishKind = "full" | "subtle";
-export type Outcome = "win" | "late" | "timeout";
+export type Outcome = "win" | "sprint";
 
 export const MAX_LIFE = 0.85; // seconds: every particle is gone well before one second
 
-export function finishKind(outcome: Outcome): FinishKind | null {
-  return outcome === "win" ? "full" : outcome === "late" ? "subtle" : null;
+export function finishKind(outcome: Outcome): FinishKind {
+  return outcome === "win" ? "full" : "subtle";
 }
 
 /** Sparks flying out of `origin` (canvas pixels). `scale` is the board size over 343 px, so small phones get small sparks. */
