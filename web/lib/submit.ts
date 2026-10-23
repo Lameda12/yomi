@@ -11,6 +11,7 @@ export interface SolvePayload {
   events: GameEvent[];
   played_zip_before: boolean | null;
   // What Yomi predicted before the solve; null when no model loaded. Old queued payloads lack it.
+  source?: "demo"; // set only by the /demo presenter screen
   prediction?: { value: number; unit: "ms" | "solver_steps"; model_version: string } | null;
 }
 

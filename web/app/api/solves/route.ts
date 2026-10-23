@@ -23,6 +23,8 @@ const Body = z.object({
   started_at_ms: int(1, Number.MAX_SAFE_INTEGER),
   events: z.array(z.tuple([int(0, 30 * 60_000), int(0, 6), int(0, 6), int(1, 49)])).min(1).max(5000),
   played_zip_before: z.boolean().nullable(),
+  // Only the /demo presenter screen sets this, so volunteer solves can be told apart (and left out of the board).
+  source: z.literal("demo").optional(),
   // What the page predicted before the solve. Optional: no model, or an older client.
   prediction: z
     .object({
@@ -62,7 +64,7 @@ export async function POST(request: Request) {
     }
     // Derived on the server so these columns never depend on client maths.
     const { cell, maxPauseMs } = findStuck(b.events);
-    const { prediction, ...rest } = b;
+    const { prediction, source, ...rest } = b;
     const inserted = await insertSolve({
       ...rest,
       grid_size: puzzle.n,
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
       pred_value: prediction?.value ?? null,
       pred_unit: prediction?.unit ?? null,
       model_version: prediction?.model_version ?? null,
+      source: source ?? null,
     });
     // Same solve_id again = a retry whose first response got lost; tell the client it is saved.
     if (!inserted) return Response.json({ ok: true, duplicate: true }, { status: 200 });

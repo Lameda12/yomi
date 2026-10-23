@@ -79,12 +79,12 @@ export async function insertSolve(s: NewSolve): Promise<boolean> {
     const rows = await sql`
       insert into solves (solve_id, player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
                           solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before,
-                          pred_value, pred_unit, model_version)
+                          pred_value, pred_unit, model_version, source)
       values (${s.solve_id}, ${s.player_id}, ${s.puzzle_id}, ${s.grid_size}, ${s.n_dots}, ${s.device},
               ${s.started_at_ms}, ${s.ended_at_ms}, ${s.solve_ms}, ${s.completed},
               ${JSON.stringify(s.events)}::jsonb, ${s.backtracks}, ${s.max_pause_ms},
               ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before},
-              ${s.pred_value ?? null}, ${s.pred_unit ?? null}, ${s.model_version ?? null})
+              ${s.pred_value ?? null}, ${s.pred_unit ?? null}, ${s.model_version ?? null}, ${s.source ?? null})
       on conflict (solve_id) do nothing
       returning id`;
     return rows.length > 0;
@@ -297,4 +297,30 @@ export async function leaderboardSnapshot(): Promise<LeaderboardSnapshot> {
 /** Forget the cached snapshot (tests, and nickname writes on this instance). */
 export function dropSnapshot() {
   snapshot = null;
+}
+
+// ---------- stuck heatmap ---------------------------------------------------------------------
+
+/** How many completed solves of this puzzle had their longest pause on each cell. Aggregate only, no players. */
+export async function stuckHeat(puzzleId: string): Promise<{ cells: { r: number; c: number; n: number }[]; total: number }> {
+  const sql = getSql();
+  let cells: { r: number; c: number; n: number }[];
+  if (sql) {
+    const rows = await sql`
+      select stuck_cell[1] as r, stuck_cell[2] as c, count(*)::int as n from solves
+      where puzzle_id = ${puzzleId} and completed and stuck_cell is not null group by 1, 2`;
+    cells = rows.map((x) => ({ r: Number(x.r), c: Number(x.c), n: Number(x.n) }));
+  } else {
+    const counts = new Map<string, number>();
+    for (const row of await readFileRows()) {
+      if (row.puzzle_id !== puzzleId || !row.completed || !row.stuck_cell) continue;
+      const k = `${row.stuck_cell[0]},${row.stuck_cell[1]}`;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    cells = [...counts].map(([k, n]) => {
+      const [r, c] = k.split(",").map(Number);
+      return { r, c, n };
+    });
+  }
+  return { cells, total: cells.reduce((a, x) => a + x.n, 0) };
 }

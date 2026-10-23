@@ -16,6 +16,20 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 **Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show a prediction before each puzzle. Today it is the solver-effort stand-in, so the game says "how hard it'll be" in solver steps, not a time. It switches to "predicted: 42s, can you beat it?" once the human-time model has 30+ real solves.
 
+## Live demo screen (`/demo`)
+
+Open `/demo` on the projector (1080p fits a whole round; at 720p the result text scrolls a little).
+
+1. Top right: live counters of total solves and players, refreshed every 10 s while the tab is visible. If the database is slow or offline they keep the last numbers and say so.
+2. Before the volunteer plays: the model's read of the puzzle, in big text. While the model is the solver-effort stand-in this is solver steps and an easier/harder cue, not a time. Say that out loud.
+3. Volunteer drags from 1 through every dot. Then the card shows predicted vs actual, their own stuck cell (red dashes), and the orange heatmap of where earlier solvers got stuck on that puzzle.
+4. "Next volunteer" resets everything. Each volunteer is a fresh anonymous player, and their solves are tagged `source = 'demo'` so they can be filtered out later. They do not appear on the Most Unpredictable board.
+5. If the Wi-Fi dies, the game still works: it needs no database to play, and solves are queued and sent later.
+
+## Future work
+
+- **Model-tuned daily difficulty** is not built. It only makes sense once a model trained on human solve times exists (30+ completed solves from 2+ players; today there are fewer). Until then the model predicts solver effort, which is not what a player finds hard.
+
 ## If asked
 
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.

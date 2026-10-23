@@ -12,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "yomi-store-"));
 const file = path.join(dir, "solves.jsonl");
 delete process.env.DATABASE_URL;
 process.env.SOLVES_JSONL = file;
-const { allSolves, dropSnapshot, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals } = await import("../lib/store.ts");
+const { allSolves, dropSnapshot, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const solve = (solve_id: string) => ({
@@ -118,6 +118,24 @@ test("leaderboardSnapshot is shared for a few seconds and refreshed by a nicknam
   const fresh = await leaderboardSnapshot(); // the nickname write dropped the cache
   assert.equal(fresh.names.get(player), "Snapshot Sam");
   assert.equal(fresh.solves.length, before.solves.length + 1);
+});
+
+test("stuckHeat counts where completed solves of one puzzle got stuck, and nothing else", async () => {
+  const puzzle = "zip-6x6-heat";
+  const mk = (cell: [number, number] | null, completed = true, pid = puzzle) => ({
+    ...solve(randomUUID()), puzzle_id: pid, stuck_cell: cell, completed,
+  });
+  await insertSolve(mk([2, 3]));
+  await insertSolve(mk([2, 3]));
+  await insertSolve(mk([0, 1]));
+  await insertSolve(mk([4, 4], false)); // skipped puzzle: not a stuck signal
+  await insertSolve(mk(null)); // no pause recorded
+  await insertSolve(mk([2, 3], true, "zip-other")); // another puzzle
+  const heat = await stuckHeat(puzzle);
+  assert.equal(heat.total, 3);
+  assert.deepEqual([...heat.cells].sort((a, b) => b.n - a.n)[0], { r: 2, c: 3, n: 2 });
+  assert.equal(heat.cells.length, 2);
+  assert.deepEqual(await stuckHeat("zip-never-played"), { cells: [], total: 0 });
 });
 
 test("players: only 60 brand-new nicknames per minute overall", async () => {

@@ -53,8 +53,15 @@ function readZipBefore(): boolean | null {
 }
 
 // The first `coreCount` puzzles come in order for everyone; after that, random practice.
-function pickPuzzle(puzzles: PublicPuzzle[], coreCount: number, not?: string): PublicPuzzle {
+function pickPuzzle(puzzles: PublicPuzzle[], coreCount: number, not?: string, demo = false): PublicPuzzle {
   const seen = readList(SEEN_KEY);
+  if (demo) {
+    // Presenter screen: any puzzle, preferring ones this screen has not shown yet. No fixed core order.
+    const pool = puzzles.filter((p) => p.id !== not);
+    const fresh = pool.filter((p) => !seen.includes(p.id));
+    const from = fresh.length ? fresh : pool;
+    return from[Math.floor(Math.random() * from.length)];
+  }
   const core = puzzles.slice(0, coreCount).find((p) => !seen.includes(p.id));
   if (core) return core;
   const practice = puzzles.slice(coreCount).filter((p) => p.id !== not);
@@ -110,12 +117,12 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
   device: null,
 });
 
-export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null }) {
+export default function ZipGame({ puzzles, coreCount, prediction, demo = false }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null; demo?: boolean }) {
   // First visit on this device: a start screen (nickname or skip) comes before the puzzle, once.
-  const [started, setStarted] = useState(startDone);
+  const [started, setStarted] = useState(() => demo || startDone());
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
-  const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount));
+  const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount, undefined, demo));
   const [path, setPath] = useState<Cell[]>(() => [startCell(puzzle)]);
   const [status, setStatus] = useState<Status>("idle");
   const [elapsed, setElapsed] = useState(0);
@@ -125,6 +132,10 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
   const [copied, setCopied] = useState(false);
   // Predicted stuck cells arrive only after the solve ends, tagged with their puzzle so a late reply is ignored.
   const [predStuck, setPredStuck] = useState<{ id: string; cells: Cell[] } | null>(null);
+  // Demo screen only: each volunteer is a fresh anonymous player (so one person at the keyboard is not one "player"
+  // for every volunteer), and the stuck heatmap of earlier solvers is revealed after the solve.
+  const [volunteer, setVolunteer] = useState(() => crypto.randomUUID());
+  const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
 
   const attempt = useRef<Attempt>(newAttempt(puzzle));
   const dragging = useRef(false);
@@ -134,10 +145,10 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
   const predicted = useMemo(() => {
     const z = prediction?.logByPuzzle[puzzle.id];
     if (!prediction || z === undefined) return null;
-    const value = timeValue(z, prediction.players, getPlayerId());
+    const value = timeValue(z, prediction.players, demo ? volunteer : getPlayerId());
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: prediction.label === "human_time" ? ("ms" as const) : ("solver_steps" as const), version: prediction.version };
-  }, [prediction, puzzle.id]);
+  }, [prediction, puzzle.id, demo, volunteer]);
 
   const { n, dots } = puzzle;
   const number = puzzles.findIndex((p) => p.id === puzzle.id) + 1;
@@ -170,7 +181,8 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
       if (completed) setSubmit("sending");
       const result = await submitSolve({
         solve_id: a.solveId,
-        player_id: getPlayerId(),
+        player_id: demo ? volunteer : getPlayerId(),
+        ...(demo ? { source: "demo" as const } : {}),
         puzzle_id: puzzle.id,
         grid_size: puzzle.n,
         device: a.device,
@@ -181,7 +193,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
       });
       if (completed) setSubmit(result);
     },
-    [puzzle.id, puzzle.n, predicted],
+    [puzzle.id, puzzle.n, predicted, demo, volunteer],
   );
 
   // Ask for the predicted stuck cells once the solve is over. Any failure just means no overlay.
@@ -194,6 +206,16 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
       if (!Array.isArray(raw)) return;
       const cells = raw.filter((c): c is Cell => Array.isArray(c) && c.length === 2 && c.every((v) => Number.isInteger(v)));
       if (cells.length) setPredStuck({ id, cells });
+    } catch {}
+  }, []);
+
+  // Demo: where earlier solvers got stuck on this puzzle. Any failure just means no heatmap.
+  const fetchHeat = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/heatmap?puzzle_id=${encodeURIComponent(id)}`);
+      if (!res.ok) return;
+      const body = (await res.json()) as { cells?: { r: number; c: number; n: number }[]; total?: number };
+      if (Array.isArray(body.cells) && body.cells.length) setHeat({ id, cells: body.cells, total: Number(body.total) || 0 });
     } catch {}
   }, []);
 
@@ -234,9 +256,10 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
         setStreakDays(days);
         void send(true, ms);
         void fetchStuck(puzzle.id);
+        if (demo) void fetchHeat(puzzle.id);
       }
     },
-    [dots, n, puzzle.id, send, fetchStuck],
+    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo],
   );
 
   // Try to move the path head to `target`: undo if it is on the path already,
@@ -313,7 +336,11 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
       if (a.t0 !== null) void send(false, performance.now() - a.t0);
       addToList(SEEN_KEY, puzzle.id);
     }
-    const p = pickPuzzle(puzzles, coreCount, puzzle.id);
+    const p = pickPuzzle(puzzles, coreCount, puzzle.id, demo);
+    if (demo) {
+      setVolunteer(crypto.randomUUID());
+      setHeat(null);
+    }
     attempt.current = newAttempt(p);
     dragging.current = false;
     setPuzzle(p);
@@ -347,22 +374,25 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
   const onPath = new Set(path.map(([r, c]) => r * n + c));
 
   return (
-    <div className="flex w-full max-w-md flex-col items-center gap-4">
-      {streak.count > 0 && (
+    <div
+      className={demo ? "flex flex-col items-center gap-3 text-lg" : "flex w-full max-w-md flex-col items-center gap-4"}
+      style={demo ? { width: "min(94vw, 52vh)" } : undefined}
+    >
+      {!demo && streak.count > 0 && (
         <p className="rounded-full bg-orange-500/15 px-3 py-1 font-mono text-xs text-orange-700 dark:text-orange-300">
           🔥 {streak.count}-day streak
         </p>
       )}
-      <div className="flex w-full items-baseline justify-between font-mono text-sm">
+      <div className={`flex w-full items-baseline justify-between font-mono ${demo ? "text-lg" : "text-sm"}`}>
         <span>
           {isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · {n}×{n}
         </span>
-        <span className="text-2xl tabular-nums">{clock(elapsed)}</span>
+        <span className={`tabular-nums ${demo ? "text-5xl" : "text-2xl"}`}>{clock(elapsed)}</span>
         <span className="opacity-60">{done.length} solved</span>
       </div>
 
       {prediction && predicted && status !== "solved" && (
-        <p className="text-center text-xs" data-testid="prediction">
+        <p className={demo ? "text-center text-xl leading-snug" : "text-center text-xs"} data-testid="prediction">
           {prediction.label === "human_time" ? (
             <>Yomi predicts <b>{showPrediction(prediction, predicted.value)}</b>. Can you beat it?</>
           ) : (
@@ -392,6 +422,18 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
           ))}
         </div>
         <svg viewBox={`0 0 ${n} ${n}`} className="pointer-events-none absolute inset-0 h-full w-full">
+          {status === "solved" && heat?.id === puzzle.id && heat.cells.map(({ r, c, n: count }) => (
+            <rect
+              key={`h${r}-${c}`}
+              x={c}
+              y={r}
+              width={1}
+              height={1}
+              fill="#f97316"
+              opacity={0.18 + (0.6 * count) / Math.max(...heat.cells.map((x) => x.n))}
+              data-heat={count}
+            />
+          ))}
           <polyline
             points={points}
             fill="none"
@@ -453,21 +495,21 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
           <button
             onClick={clear}
             disabled={status === "solved" || path.length <= 1}
-            className="min-h-11 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
+            className={`rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30 ${demo ? "min-h-14 text-lg" : "min-h-11"}`}
           >
             Clear
           </button>
-          <button onClick={next} className="min-h-11 rounded-lg bg-foreground px-4 py-2 text-background">
-            {status === "solved" ? "Next puzzle" : "Skip"}
+          <button onClick={next} className={`rounded-lg bg-foreground px-4 py-2 text-background ${demo ? "min-h-14 text-lg" : "min-h-11"}`}>
+            {status === "solved" ? (demo ? "Next volunteer" : "Next puzzle") : "Skip"}
           </button>
         </div>
       </div>
 
-      <div className="min-h-24 w-full text-center text-sm" aria-live="polite">
+      <div className={`w-full text-center ${demo ? "min-h-20 text-lg" : "min-h-24 text-sm"}`} aria-live="polite">
         {status === "idle" && (
           <div className="flex flex-col gap-1">
             <p>Start at 1. Connect the dots in order and fill every cell.</p>
-            {streak.atRisk && (
+            {!demo && streak.atRisk && (
               <p className="text-orange-600">
                 Solve one today to keep your {streak.count}-day streak 🔥
               </p>
@@ -486,7 +528,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
               )}
             </p>
             {prediction && predicted && (
-              <p className="text-sm" data-testid="pred-vs-actual">
+              <p className={demo ? "text-xl" : "text-sm"} data-testid="pred-vs-actual">
                 {prediction.label === "human_time" ? (
                   <>
                     Yomi predicted <b>{clock(predicted.value)}</b>. You: <b>{clock(elapsed)}</b>.{" "}
@@ -504,6 +546,12 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
             {predStuck?.id === puzzle.id && (
               <p className="text-xs text-blue-600 dark:text-blue-300">Blue dots: where Yomi expected you to get stuck.</p>
             )}
+            {demo && heat?.id === puzzle.id && heat.total > 0 && (
+              <p className="text-base text-orange-600" data-testid="heat-caption">
+                Orange: where {heat.total} earlier solver{heat.total === 1 ? "" : "s"} got stuck on this puzzle.
+              </p>
+            )}
+            {!demo && (<>
             <div className="flex items-center gap-2">
               <code className="select-all rounded-md bg-foreground/10 px-3 py-1.5">{shareLine}</code>
               <button onClick={copyShare} className="rounded-md border border-foreground/30 px-3 py-1.5">
@@ -525,6 +573,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
                 {streak.count === 1 ? "Day 1. Come back tomorrow to start a streak." : `${streak.count} days in a row 🔥 Come back tomorrow to keep it.`}
               </p>
             </div>
+            </>)}
             <p className="text-xs opacity-60">
               {submit === "sending" && "Saving…"}
               {submit === "saved" && "Solve logged. Thank you."}
