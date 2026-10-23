@@ -755,11 +755,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             </button>
           </div>
         </div>
-      ) : status === "solved" ? (
-        <button onClick={next} className="min-h-11 w-full rounded-lg bg-foreground px-4 py-2 text-background" data-testid="next">
-          Next puzzle
-        </button>
-      ) : (
+      ) : status === "solved" ? null : (
         <div className="flex w-full gap-2 text-sm">
           <button
             onClick={undo}
@@ -884,7 +880,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               ) : (
                 <p className="flex flex-wrap items-center justify-center gap-2 text-xs" data-testid="name-prompt">
                   Want your name on the board?
-                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg bg-foreground px-4 text-background">
+                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg border-2 border-foreground px-4 font-semibold">
                     No thanks
                   </button>
                   <button onClick={() => setNameOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4">
@@ -898,6 +894,17 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               {submit === "queued" && "Couldn't reach the server just now. This solve is saved here and will be sent on your next visit."}
               {submit === "failed" && "This solve could not be logged."}
             </p>
+            {!demo && (
+              // The one primary action. Sticky, so it stays in reach however long the card is on a small phone.
+              <button
+                onClick={next}
+                autoFocus
+                className="sticky bottom-3 z-10 mt-2 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 text-lg font-semibold text-white shadow-lg"
+                data-testid="next"
+              >
+                Next puzzle
+              </button>
+            )}
           </div>
         )}
       </div>
