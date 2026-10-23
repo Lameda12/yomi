@@ -11,7 +11,7 @@ Owner: Andi. Works 1 to 2 hours a day. Ship small and working before polished.
 Formula: **Hook → Fix → Proof.** Gen Z voice: casual, punchy, a bit of slang, never cringe, never fake.
 
 - **Hook:** You thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that before you start. 👀
-- **Fix:** Zip-style path puzzle + an ML model that predicts your time and your 3 stuck spots before you play. You try to beat it. Result card shows predicted vs actual. The model learns from every solve.
+- **Fix:** Zip-style path puzzle + an ML model that predicts your time and your 3 stuck spots before you play. You try to beat it. Result card shows predicted vs actual. Every solve is stored, and the model is retrained by hand in batches (it does not update while you play).
 - **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, 26 ml tests passing.
 
 Honesty rules for copy (these override hype):

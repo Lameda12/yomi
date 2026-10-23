@@ -73,7 +73,7 @@ export function gapParts(i: GapInput): GapParts {
 
   // Solver steps are not a time, so there is no gap to explain; say what happened and what the model cannot do yet.
   if (i.label !== "human_time" || !i.predicted || i.predicted.unit !== "ms" || !(i.predicted.value > 0)) {
-    const learning = "Yomi's model is still learning from real players, so its guess is not a time yet.";
+    const learning = "Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.";
     return { headline: null, detail: story ? `${story}. ${learning}` : `A clean run with no backtracks. ${learning}` };
   }
 

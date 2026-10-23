@@ -6,7 +6,7 @@
 
 **Yomi is a daily path puzzle that guesses how you'll do before you play.**
 
-Connect the numbered dots with one line. Before you start, Yomi predicts your time. Then you try to beat the prediction. When you finish, the result card shows predicted vs actual, plus the 3 cells it expected you to get stuck on (revealed only after the solve, never before). The model learns from every solve.
+Connect the numbered dots with one line. Before you start, Yomi predicts your time. Then you try to beat the prediction. When you finish, the result card shows predicted vs actual, plus the 3 cells it expected you to get stuck on (revealed only after the solve, never before). Every solve is stored, and the model is retrained by hand, in batches, on the stored solves. It does not update while you play.
 
 Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 2026**.
 
