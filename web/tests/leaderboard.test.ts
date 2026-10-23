@@ -41,8 +41,10 @@ test("top 10 only, and the board never exposes a player_id", () => {
   const { board } = buildBoard(rows, none);
   assert.equal(board.length, TOP_N);
   assert.deepEqual(board.map((b) => b.rank), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  for (const b of board) assert.deepEqual(Object.keys(b).sort(), ["avg_error_ms", "name", "rank", "solves"]);
+  for (const b of board) assert.deepEqual(Object.keys(b).sort(), ["avg_error_ms", "id", "name", "rank", "solves"]);
   assert.ok(!JSON.stringify(board).includes("player-"));
+  assert.equal(new Set(board.map((b) => b.id)).size, TOP_N); // ids are unique and stable
+  assert.equal(buildBoard(rows, none).board[0].id, board[0].id);
 });
 
 test("names: nickname when set, a stable anonymous tag otherwise", () => {

@@ -19,6 +19,7 @@ export interface ScoredSolve {
 }
 
 export interface BoardRow {
+  id: string; // opaque, stable per player: lets the page animate a row as its rank changes. Not the player_id.
   rank: number;
   name: string;
   avg_error_ms: number;
@@ -38,6 +39,9 @@ export function anonName(playerId: string): string {
   return `Anon ${createHash("sha256").update(playerId).digest("hex").slice(-4)}`;
 }
 
+/** Opaque row id: a hash of the player id with a different prefix than the anon tag, so neither reveals the other. */
+export const rowId = (playerId: string) => createHash("sha256").update(`row:${playerId}`).digest("hex").slice(0, 12);
+
 interface Ranked extends BoardRow {
   player_id: string;
 }
@@ -53,6 +57,7 @@ export function rankPlayers(solves: ScoredSolve[], names: Map<string, string>): 
     .filter(([, errs]) => errs.length >= MIN_SOLVES)
     .map(([player_id, errs]) => ({
       player_id,
+      id: rowId(player_id),
       name: names.get(player_id) ?? anonName(player_id),
       avg_error_ms: Math.round(errs.reduce((a, b) => a + b, 0) / errs.length),
       solves: errs.length,
@@ -68,7 +73,7 @@ export function buildBoard(
   me?: string,
 ): { board: BoardRow[]; you: You | null; players: number } {
   const ranked = rankPlayers(solves, names);
-  const board = ranked.slice(0, TOP_N).map((r) => ({ rank: r.rank, name: r.name, avg_error_ms: r.avg_error_ms, solves: r.solves }));
+  const board = ranked.slice(0, TOP_N).map((r) => ({ id: r.id, rank: r.rank, name: r.name, avg_error_ms: r.avg_error_ms, solves: r.solves }));
   if (!me) return { board, you: null, players: ranked.length };
   const mine = solves.filter((s) => s.player_id === me && Number.isFinite(s.pred_value) && s.pred_value > 0).length;
   const at = ranked.find((r) => r.player_id === me);

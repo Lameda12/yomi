@@ -12,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "yomi-store-"));
 const file = path.join(dir, "solves.jsonl");
 delete process.env.DATABASE_URL;
 process.env.SOLVES_JSONL = file;
-const { allSolves, getNicknames, insertSolve, predictedSolves, savePlayer, solveTotals } = await import("../lib/store.ts");
+const { allSolves, dropSnapshot, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals } = await import("../lib/store.ts");
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const solve = (solve_id: string) => ({
@@ -103,6 +103,21 @@ test("players: save, unique case-insensitively, per-player cooldown, clear back 
   assert.equal((await getNicknames([a, b])).has(b), false);
   assert.equal(await savePlayer(c, "Zig"), "ok"); // the freed name is available again
   assert.equal((await getNicknames([])).size, 0);
+});
+
+test("leaderboardSnapshot is shared for a few seconds and refreshed by a nickname change", async () => {
+  dropSnapshot();
+  const player = randomUUID();
+  const before = await leaderboardSnapshot();
+  assert.equal(await leaderboardSnapshot(), before, "second call inside 5 s returns the very same snapshot");
+  const concurrent = await Promise.all([leaderboardSnapshot(), leaderboardSnapshot()]);
+  assert.equal(concurrent[0], concurrent[1]);
+  await insertSolve({ ...solve(randomUUID()), player_id: player, pred_value: 5000, pred_unit: "ms", model_version: "t" });
+  assert.equal((await leaderboardSnapshot()).solves.length, before.solves.length, "new solves wait for the cache to expire");
+  assert.equal(await savePlayer(player, "Snapshot Sam"), "ok");
+  const fresh = await leaderboardSnapshot(); // the nickname write dropped the cache
+  assert.equal(fresh.names.get(player), "Snapshot Sam");
+  assert.equal(fresh.solves.length, before.solves.length + 1);
 });
 
 test("players: only 60 brand-new nicknames per minute overall", async () => {

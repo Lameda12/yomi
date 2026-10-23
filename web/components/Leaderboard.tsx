@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { peekPlayerId, retryPendingNickname } from "@/lib/player";
+import { useLivePoll } from "@/lib/useLivePoll";
 import ChangeName from "./ChangeName";
 
 const SOLVES_FOR_MODEL = 30; // human solves the time model needs before it predicts milliseconds
 
 interface BoardRow {
+  id: string;
   rank: number;
   name: string;
   avg_error_ms: number;
@@ -31,23 +33,29 @@ export default function Leaderboard() {
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
+  // The board is the cacheable GET; "you" is a separate POST that carries the player id in the body.
   useEffect(() => {
     let alive = true;
     const id = peekPlayerId();
-    fetch("/api/leaderboard", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(id ? { player_id: id } : {}),
-      cache: "no-store",
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status));
-        return res.json() as Promise<Data>;
-      })
-      .then((d) => {
+    const board = fetch("/api/leaderboard", { cache: "no-store" }).then((res) => {
+      if (!res.ok) throw new Error(String(res.status));
+      return res.json() as Promise<Omit<Data, "you">>;
+    });
+    const you = id
+      ? fetch("/api/leaderboard", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ player_id: id }),
+          cache: "no-store",
+        })
+          .then((res) => (res.ok ? (res.json() as Promise<{ you: Data["you"] }>) : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+    Promise.all([board, you])
+      .then(([b, y]) => {
         if (!alive) return;
         setError(false);
-        setData(d);
+        setData({ ...b, you: y?.you ?? null });
       })
       .catch(() => {
         if (alive) setError(true);
@@ -57,12 +65,37 @@ export default function Leaderboard() {
     };
   }, [tick]);
 
+  // Live: refetch every 10 s while this tab is visible, and straight away when it becomes visible again.
+  useLivePoll(refresh, 10_000);
+
+  // Animate rank changes (FLIP): remember each row's offset, and after a refresh slide rows from where they were.
+  const listRef = useRef<HTMLOListElement>(null);
+  const seen = useRef(new Map<string, { top: number; rank: number }>());
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const next = new Map<string, { top: number; rank: number }>();
+    for (const li of list.querySelectorAll<HTMLElement>("li[data-id]")) {
+      const id = li.dataset.id!;
+      const rank = Number(li.dataset.rank);
+      const prev = seen.current.get(id);
+      if (prev && !calm) {
+        const dy = prev.top - li.offsetTop;
+        if (Math.abs(dy) > 1) li.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 450, easing: "cubic-bezier(.2,.8,.2,1)" });
+        if (prev.rank !== rank) li.animate([{ backgroundColor: "rgb(249 115 22 / 0.35)" }, { backgroundColor: "transparent" }], { duration: 900 });
+      }
+      next.set(id, { top: li.offsetTop, rank });
+    }
+    seen.current = next;
+  }, [data?.board]);
+
   // A nickname typed while offline gets another try whenever the board is opened.
   useEffect(() => {
     void retryPendingNickname().then(refresh);
   }, [refresh]);
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-foreground/20 p-6 text-center text-sm">
         <p>Couldn&apos;t load the leaderboard.</p>
@@ -77,6 +110,10 @@ export default function Leaderboard() {
   const you = data.you;
   return (
     <div className="flex w-full flex-col gap-5">
+      <p className="flex items-center justify-center gap-2 text-xs opacity-60" data-testid="live">
+        <span className="h-2 w-2 rounded-full bg-green-500 motion-safe:animate-pulse" aria-hidden />
+        Live · refreshes every 10 s
+      </p>
       {data.mode === "warming" ? (
         <section className="flex flex-col gap-3 rounded-2xl border border-foreground/20 p-5 text-sm">
           <p className="text-base font-semibold">Not open yet 👀</p>
@@ -108,10 +145,12 @@ export default function Leaderboard() {
               Nobody&apos;s qualified yet. Solve {data.rules.min_solves} puzzles and you could be first.
             </p>
           ) : (
-            <ol className="flex flex-col gap-1.5" aria-label="Most Unpredictable leaderboard">
+            <ol ref={listRef} className="relative flex flex-col gap-1.5" aria-label="Most Unpredictable leaderboard">
               {data.board.map((r) => (
                 <li
-                  key={r.rank}
+                  key={r.id}
+                  data-id={r.id}
+                  data-rank={r.rank}
                   className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 text-sm ${
                     you?.rank === r.rank ? "border-orange-500 bg-orange-500/10" : "border-foreground/15"
                   }`}

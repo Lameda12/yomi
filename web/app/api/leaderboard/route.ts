@@ -1,43 +1,57 @@
 import { z } from "zod";
 import { CAP_MS, MIN_SOLVES, TOP_N, buildBoard } from "@/lib/leaderboard";
 import { loadModel } from "@/lib/model";
-import { getNicknames, predictedSolves, solveTotals } from "@/lib/store";
+import { leaderboardSnapshot } from "@/lib/store";
 
-// POST, not GET, so the caller's player_id travels in the body and never lands in a URL or a log.
-// The response carries nicknames and anonymous tags only, never a player_id.
-const Body = z.object({ player_id: z.uuid().optional() });
+// GET is the public board: the same for everyone, so the CDN may keep it for 5 s (s-maxage) and many open tabs
+// polling every 10 s do not each hit Neon. POST returns only "you", with the player_id in the body (never in a
+// URL or a log) and is never cached. Neither response contains a player_id.
+const BOARD_CACHE = "public, max-age=0, s-maxage=5";
+
+async function payload(me?: string) {
+  const { solves, names, totals } = await leaderboardSnapshot();
+  const { board, you, players } = buildBoard(solves, names, me);
+  // The board compares a time prediction with a real time. Until a human-trained model exists the app
+  // predicts solver steps, so there is nothing to compare: say so instead of showing an empty table.
+  const open = loadModel()?.trained_on.label === "human_time" || board.length > 0;
+  return {
+    mode: open ? ("open" as const) : ("warming" as const),
+    board,
+    you,
+    players,
+    totals,
+    rules: { min_solves: MIN_SOLVES, top: TOP_N, cap_ms: CAP_MS },
+  };
+}
+
+export async function GET() {
+  try {
+    const p = await payload();
+    return Response.json({ mode: p.mode, board: p.board, players: p.players, totals: p.totals, rules: p.rules }, { headers: { "cache-control": BOARD_CACHE } });
+  } catch (err) {
+    console.error("[leaderboard] error:", err instanceof Error ? err.message : err);
+    return Response.json({ error: "leaderboard unavailable" }, { status: 500, headers: { "cache-control": "no-store" } });
+  }
+}
+
+const Body = z.object({ player_id: z.uuid() });
 
 export async function POST(request: Request) {
-  let me: string | undefined;
+  let me: string;
   try {
     const text = await request.text();
     if (text.length > 2_000) return Response.json({ error: "body too large" }, { status: 400 });
-    const parsed = Body.safeParse(text ? JSON.parse(text) : {});
+    const parsed = Body.safeParse(JSON.parse(text));
     if (!parsed.success) return Response.json({ error: "invalid payload" }, { status: 400 });
     me = parsed.data.player_id;
   } catch {
     return Response.json({ error: "invalid json" }, { status: 400 });
   }
-
   try {
-    const solves = await predictedSolves();
-    const ids = [...new Set(solves.map((s) => s.player_id)), ...(me ? [me] : [])];
-    const names = await getNicknames(ids);
-    const { board, you, players } = buildBoard(solves, names, me);
-    // The board compares a time prediction with a real time. Until a human-trained model exists the app
-    // predicts solver steps, so there is nothing to compare: say so instead of showing an empty table.
-    const timeModel = loadModel()?.trained_on.label === "human_time";
-    const open = timeModel || board.length > 0;
-    return Response.json({
-      mode: open ? "open" : "warming",
-      board,
-      you,
-      players,
-      totals: await solveTotals(),
-      rules: { min_solves: MIN_SOLVES, top: TOP_N, cap_ms: CAP_MS },
-    });
+    const { you } = await payload(me);
+    return Response.json({ you }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     console.error("[leaderboard] error:", err instanceof Error ? err.message : err);
-    return Response.json({ error: "leaderboard unavailable" }, { status: 500 });
+    return Response.json({ error: "leaderboard unavailable" }, { status: 500, headers: { "cache-control": "no-store" } });
   }
 }

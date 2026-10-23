@@ -207,7 +207,7 @@ export async function getNicknames(ids: string[]): Promise<Map<string, string>> 
  * lib/nickname.ts. Names are unique case-insensitively ("taken"). A player can write once per 5 s
  * ("cooldown"), and only 60 new nicknames are accepted per minute overall ("busy").
  */
-export async function savePlayer(playerId: string, nickname: string | null): Promise<SavePlayerResult> {
+async function savePlayerInner(playerId: string, nickname: string | null): Promise<SavePlayerResult> {
   const sql = getSql();
   const key = nickname === null ? null : nicknameKey(nickname);
   if (sql) {
@@ -244,4 +244,57 @@ export async function savePlayer(playerId: string, nickname: string | null): Pro
   await mkdir(path.dirname(playersFile()), { recursive: true });
   await appendFile(playersFile(), JSON.stringify(line) + "\n");
   return "ok";
+}
+
+export async function savePlayer(playerId: string, nickname: string | null): Promise<SavePlayerResult> {
+  const result = await savePlayerInner(playerId, nickname);
+  if (result === "ok") dropSnapshot();
+  return result;
+}
+
+// ---------- leaderboard snapshot (shared 5 s cache) ------------------------------------------
+
+export interface LeaderboardSnapshot {
+  solves: PredictedSolve[];
+  names: Map<string, string>; // every nickname, so "you" never needs its own query
+  totals: { solves: number; players: number };
+}
+
+const SNAPSHOT_MS = 5_000;
+let snapshot: { at: number; data: LeaderboardSnapshot } | null = null;
+let loading: Promise<LeaderboardSnapshot> | null = null;
+
+async function allNicknames(): Promise<Map<string, string>> {
+  const sql = getSql();
+  if (sql) {
+    const rows = await sql`select player_id, nickname from players`;
+    return new Map(rows.map((r) => [String(r.player_id), String(r.nickname)]));
+  }
+  const all = await readFilePlayers();
+  return new Map([...all].map(([id, l]) => [id, l.nickname!]));
+}
+
+/**
+ * Everything the leaderboard and the live counters need, read once and shared for 5 seconds. Many open tabs
+ * polling every 10 s therefore cost one round of database reads per 5 s per server instance, not one per tab.
+ * Concurrent callers share a single in-flight load. A nickname change on this instance drops the cache.
+ */
+export async function leaderboardSnapshot(): Promise<LeaderboardSnapshot> {
+  if (snapshot && Date.now() - snapshot.at < SNAPSHOT_MS) return snapshot.data;
+  loading ??= (async () => {
+    try {
+      const [solves, names, totals] = await Promise.all([predictedSolves(), allNicknames(), solveTotals()]);
+      const data = { solves, names, totals };
+      snapshot = { at: Date.now(), data };
+      return data;
+    } finally {
+      loading = null;
+    }
+  })();
+  return loading;
+}
+
+/** Forget the cached snapshot (tests, and nickname writes on this instance). */
+export function dropSnapshot() {
+  snapshot = null;
 }
