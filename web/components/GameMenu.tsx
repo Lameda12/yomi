@@ -87,7 +87,7 @@ export default function GameMenu(p: MenuProps) {
           Stats
         </Link>
         <Link href="/board" className={row}>
-          Most Unpredictable board
+          Most Unpredictable in Yomi
         </Link>
         <div className="flex justify-center">
           <ChangeName />

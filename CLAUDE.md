@@ -39,7 +39,7 @@ Tasks (update the checkboxes as you finish them):
 
 Extras, only if everything above is done: a test that /stats totals match DB counts; a test that a 429 never drops a solve.
 
-Sprint 3 (Oct 22 to 29): personalization, the "Most Unpredictable at Dal" leaderboard, model-tuned daily difficulty, retraining on the full data, showcase demo rehearsal.
+Sprint 3 (Oct 22 to 29): personalization, the "Most Unpredictable in Yomi" leaderboard, model-tuned daily difficulty, retraining on the full data, showcase demo rehearsal.
 
 ## Repo map
 
