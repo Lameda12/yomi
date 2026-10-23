@@ -14,6 +14,7 @@ import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
 import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
 import GameMenu from "./GameMenu";
+import PathLine from "./PathLine";
 import StreakChip from "./StreakChip";
 import NameForm from "./NameForm";
 import Tutorial from "./Tutorial";
@@ -536,7 +537,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           ? `no data on this puzzle yet, so ${clock(limitInfo.ms)} to start`
           : "";
 
-  const points = path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
   const onPath = new Set(path.map(([r, c]) => r * n + c));
 
   // Extreme only: how much of the clock is gone, 0 to 1. It drives the pulse and the warning colour.
@@ -677,14 +677,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               data-heat={count}
             />
           ))}
-          <polyline
-            points={points}
-            fill="none"
-            stroke={status === "solved" ? "#16a34a" : "#f97316"}
-            strokeWidth={0.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <PathLine path={path} stroke={status === "solved" ? "#16a34a" : "#f97316"} />
           {dots.map(([r, c, v]) => (
             <g key={v}>
               <circle cx={c + 0.5} cy={r + 0.5} r={0.3} className="fill-foreground" />

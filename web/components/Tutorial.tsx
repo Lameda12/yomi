@@ -12,6 +12,7 @@ import {
   tutorialUndo,
 } from "@/lib/tutorial";
 import type { Cell } from "@/lib/zip";
+import PathLine from "./PathLine";
 
 const n = TUTORIAL_N;
 
@@ -64,8 +65,6 @@ export default function Tutorial({ onClose }: { onClose: () => void }) {
     dragging.current = false;
   };
 
-  const points = state.path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
-
   return (
     <div role="dialog" aria-modal="true" aria-label="How to play" className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-background p-4" data-testid="tutorial">
       <div className="flex w-full max-w-xs flex-col items-center gap-3">
@@ -99,14 +98,7 @@ export default function Tutorial({ onClose }: { onClose: () => void }) {
             ))}
           </div>
           <svg viewBox={`0 0 ${n} ${n}`} className="pointer-events-none absolute inset-0 h-full w-full">
-            <polyline
-              points={points}
-              fill="none"
-              stroke={stage === 3 ? "#16a34a" : "#f97316"}
-              strokeWidth={0.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <PathLine path={state.path} stroke={stage === 3 ? "#16a34a" : "#f97316"} />
             {TUTORIAL_DOTS.map(([r, c, v]) => (
               <g key={v}>
                 {v === hint && <circle cx={c + 0.5} cy={r + 0.5} r={0.42} fill="none" stroke="#f97316" strokeWidth={0.07} className="motion-safe:animate-pulse" />}
