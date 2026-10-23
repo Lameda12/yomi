@@ -13,21 +13,19 @@ export default async function Image({ params }: { params: Promise<{ id: string }
   const { id } = await params;
   await connection();
   const s = await getSharedSolve(id).catch(() => null);
+  // Kept deliberately plain: the image renderer is not a browser. Rows are single text nodes with an explicit line
+  // height and margins (no gap, no opacity, no fragments), which lay out correctly.
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0a0a0a", color: "#ededed", gap: 24 }}>
-        <div style={{ display: "flex", fontSize: 44, fontWeight: 700 }}>
+      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0a0a0a", color: "#ededed" }}>
+        <div style={{ display: "flex", fontSize: 48, fontWeight: 700, lineHeight: 1.2, marginBottom: 24 }}>
           Yomi <span style={{ color: "#f97316", marginLeft: 16 }}>読み</span>
         </div>
-        {s ? (
-          <>
-            <div style={{ display: "flex", fontSize: 220, fontWeight: 800, color: "#f97316" }}>{clock(s.solve_ms)}</div>
-            <div style={{ display: "flex", fontSize: 42, opacity: 0.85 }}>{resultLine(s)}</div>
-            <div style={{ display: "flex", fontSize: 36, opacity: 0.6 }}>Can you beat it?</div>
-          </>
-        ) : (
-          <div style={{ display: "flex", fontSize: 56 }}>Read the grid. One path, every cell.</div>
-        )}
+        {/* No fragment here: the renderer lays a fragment's children out sideways. */}
+        {s && <div style={{ display: "flex", fontSize: 200, fontWeight: 700, lineHeight: 1, color: "#f97316", marginBottom: 24 }}>{clock(s.solve_ms)}</div>}
+        {s && <div style={{ display: "flex", fontSize: 38, lineHeight: 1.3, marginBottom: 16 }}>{resultLine(s)}</div>}
+        {s && <div style={{ display: "flex", fontSize: 34, lineHeight: 1.3, color: "#999999" }}>Can you beat it?</div>}
+        {!s && <div style={{ display: "flex", fontSize: 52, lineHeight: 1.3 }}>Read the grid. One path, every cell.</div>}
       </div>
     ),
     size,
