@@ -26,7 +26,8 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 ## Prediction and result card (regular screen)
 
 - **Before the solve** the prediction sits in a highlighted box above the grid. With a human-time model it reads "Target: beat 0:42". While the model is the solver-effort stand-in it reads "Yomi's read: on the easier side. Can you make it look easy?" with a note that the number is solver steps for a computer, not a time. Say that out loud.
-- **After the solve** one template line explains the gap, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the model is still learning from real players.
+- **Above the grid** one line states the objective: "Connect 1 to N in order and fill every cell".
+- **After the solve**, with a human-time model, the result card leads with the percent as a big number ("40% faster than predicted") and the explanation under it. With the solver-effort model there is no percentage; the card keeps the plain line that the model is still learning from real players. The explanation is one template line, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the model is still learning from real players.
 - **Personal best** per grid size and mode (Regular and Extreme are separate), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size and mode just shows the time to beat. The demo screen has no personal best.
 
 ## The finish (regular screen)

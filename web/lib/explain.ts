@@ -57,8 +57,15 @@ function pauseText(i: GapInput): string | null {
   return `paused ${Math.round(i.pause.ms / 1000)} s${near === null ? "" : ` near the ${ordinal(near)} dot`}`;
 }
 
-/** One plain-English line on the gap between what Yomi predicted and what happened. */
-export function explainGap(i: GapInput): string {
+export interface GapParts {
+  // The big number on the result card, e.g. { big: "40%", small: "faster than predicted" }. Null when the model did
+  // not predict a time (solver steps are not a time, so there is no percentage to claim).
+  headline: { big: string; small: string; tone: "faster" | "slower" | "close" } | null;
+  detail: string; // the plain-English explanation that goes under the headline
+}
+
+/** The gap between what Yomi predicted and what happened, as a headline and one explanation line. */
+export function gapParts(i: GapInput): GapParts {
   const pause = pauseText(i);
   const bt = i.backtracks > 0 ? `backtracked ${plural(i.backtracks, "time")}` : null;
   const facts = [pause, bt].filter((x): x is string => x !== null);
@@ -67,19 +74,35 @@ export function explainGap(i: GapInput): string {
   // Solver steps are not a time, so there is no gap to explain; say what happened and what the model cannot do yet.
   if (i.label !== "human_time" || !i.predicted || i.predicted.unit !== "ms" || !(i.predicted.value > 0)) {
     const learning = "Yomi's model is still learning from real players, so its guess is not a time yet.";
-    return story ? `${story}. ${learning}` : `A clean run with no backtracks. ${learning}`;
+    return { headline: null, detail: story ? `${story}. ${learning}` : `A clean run with no backtracks. ${learning}` };
   }
 
   const ratio = i.actualMs / i.predicted.value;
   if (ratio <= 1 - CLOSE) {
     const pct = Math.round((1 - ratio) * 100);
-    return `You were ${pct}% faster: ${i.backtracks === 0 ? "no backtracks." : `only ${plural(i.backtracks, "backtrack")}.`}`;
+    return {
+      headline: { big: `${pct}%`, small: "faster than predicted", tone: "faster" },
+      detail: i.backtracks === 0 ? "No backtracks." : `Only ${plural(i.backtracks, "backtrack")}.`,
+    };
   }
   if (ratio >= 1 + CLOSE) {
     const pct = Math.round((ratio - 1) * 100);
     const why = story ? `${story}, which the model does not see.` : "A clean run, so this one was just harder on you than Yomi guessed.";
     const first = i.firstTime ? " It was your first solve, so Yomi has no history on you yet." : "";
-    return `You were ${pct}% slower. ${why}${first}`;
+    return { headline: { big: `${pct}%`, small: "slower than predicted", tone: "slower" }, detail: `${why}${first}` };
   }
-  return `Right on Yomi's guess${story ? `, even though you ${facts.join(" and ")}` : ""}.`;
+  return {
+    headline: { big: "Right on", small: "Yomi's guess", tone: "close" },
+    detail: story ? `Even though you ${facts.join(" and ")}.` : "Within 10% of Yomi's guess.",
+  };
 }
+
+/** The same thing as one sentence, for places without room for a headline (the demo screen). */
+export function explainGap(i: GapInput): string {
+  const { headline, detail } = gapParts(i);
+  if (!headline) return detail;
+  return headline.tone === "close" ? `Right on Yomi's guess. ${detail}` : `You were ${headline.big} ${headline.small}. ${detail}`;
+}
+
+/** The one-line objective above the grid. */
+export const objectiveLine = (nDots: number): string => `Connect 1 to ${nDots} in order and fill every cell`;
