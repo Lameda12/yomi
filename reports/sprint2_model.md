@@ -46,4 +46,5 @@ No hit rate is claimed. The form target is 60%; we have no measurement against i
 
 - The deployed model is the solver-effort fallback. The honest way to describe it is "predicts how hard it'll be", not "predicts your time".
 - Both evaluations need real data we do not have yet: 30+ completed human solves from 2+ players (and for the time model, 30+ in each training fold). The code for both is written and unit-tested on synthetic data, and those synthetic tests are not results.
-- Next: run `python -m ml.pipeline --source neon` once the live site has collected solves. It overwrites `web/public/model.json` and this file.
+- Next: run `python -m ml.pipeline --source neon` once the live site has collected solves. It overwrites `web/public/model.json` and this file (the previous report stays in `reports/history/`), and appends a line to `web/public/model_history.json`.
+- The model does not learn while people play. Solves are stored, and a person runs the pipeline to retrain it in a batch.

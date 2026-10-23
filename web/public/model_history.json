@@ -1,0 +1,104 @@
+[
+  {
+    "version": "20261015-solver_effort-n13",
+    "trained_at": "2026-10-15",
+    "source": null,
+    "rows_read": null,
+    "label": "solver_effort",
+    "human_solves": 13,
+    "players": 1,
+    "time": {
+      "intercept": -4.399974468584499,
+      "coef": {
+        "grid_size": 0.5323792779914913,
+        "n_dots": 0.015255360955090023,
+        "max_gap": 0.08930571446177253,
+        "mean_gap": 1.9297990488778916,
+        "turns": 0.1005348221760706,
+        "solver_steps": 0.0
+      },
+      "residual_std": 0.6871334856528426,
+      "eval": {
+        "status": "not_run",
+        "reason": "The evaluation code did not exist yet."
+      }
+    },
+    "stuck": {
+      "trained": false,
+      "solves": null,
+      "eval": {
+        "status": "not_run",
+        "reason": "The stuck-point model did not exist yet."
+      }
+    },
+    "note": "Rebuilt from git history (commit c0984a6). The 13 counted solves included 8 early test plays, which the next version removed. The report for this run was not kept."
+  },
+  {
+    "version": "20261015-solver_effort-n5",
+    "trained_at": "2026-10-15",
+    "source": null,
+    "rows_read": null,
+    "label": "solver_effort",
+    "human_solves": 5,
+    "players": 1,
+    "time": {
+      "intercept": -4.399974468584499,
+      "coef": {
+        "grid_size": 0.5323792779914913,
+        "n_dots": 0.015255360955090023,
+        "max_gap": 0.08930571446177253,
+        "mean_gap": 1.9297990488778916,
+        "turns": 0.1005348221760706,
+        "solver_steps": 0.0
+      },
+      "residual_std": 0.6871334856528426,
+      "eval": {
+        "status": "not_run",
+        "reason": "The evaluation code did not exist yet."
+      }
+    },
+    "stuck": {
+      "trained": false,
+      "solves": null,
+      "eval": {
+        "status": "not_run",
+        "reason": "The stuck-point model did not exist yet."
+      }
+    },
+    "note": "Rebuilt from git history (commit f7727a1). Same fit as the version before; only the solve count changed, after the 8 early test plays were excluded. The report for this run was not kept."
+  },
+  {
+    "version": "20261022-solver_effort-n7",
+    "trained_at": "2026-10-22",
+    "source": "jsonl",
+    "rows_read": 15,
+    "label": "solver_effort",
+    "human_solves": 7,
+    "players": 1,
+    "time": {
+      "intercept": -4.399974468584499,
+      "coef": {
+        "grid_size": 0.5323792779914913,
+        "n_dots": 0.015255360955090023,
+        "max_gap": 0.08930571446177253,
+        "mean_gap": 1.9297990488778916,
+        "turns": 0.1005348221760706,
+        "solver_steps": 0.0
+      },
+      "residual_std": 0.6871334856528426,
+      "eval": {
+        "status": "not_run",
+        "reason": "leave-one-player-out needs 2+ players, have 1"
+      }
+    },
+    "stuck": {
+      "trained": false,
+      "solves": 7,
+      "eval": {
+        "status": "not_run",
+        "reason": "leave-one-player-out needs 2+ players, have 1"
+      }
+    },
+    "note": "Rebuilt from git history (commit 02cadcc) and the report of that run, which is kept in reports/history/."
+  }
+]
