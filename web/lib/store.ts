@@ -3,10 +3,8 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { getSql } from "./db.ts";
 import { dedupeBySolveId } from "./dedupe.ts";
-import type { CrowdSolve } from "./crowdBoard.ts";
 import { MIN_CROWD } from "./extreme.ts";
-import type { ExtremeWin } from "./extremeBoard.ts";
-import { anonName } from "./leaderboard.ts";
+import { anonName } from "./anon.ts";
 import { nicknameKey } from "./nickname.ts";
 import { isShareId, toShared, type SharedSolve } from "./share.ts";
 import type { GameEvent } from "./stuck.ts";
@@ -158,29 +156,7 @@ export async function getSharedSolve(solveId: string): Promise<SharedSolve | nul
   return toShared(row, name);
 }
 
-// ---------- leaderboard + nicknames ----------------------------------------------------------
-
-/** A solve that can be scored for "Most Unpredictable": completed, with a prediction in milliseconds. */
-export interface PredictedSolve {
-  player_id: string;
-  solve_ms: number;
-  pred_value: number;
-}
-
-export async function predictedSolves(): Promise<PredictedSolve[]> {
-  const sql = getSql();
-  if (sql) {
-    const rows = await sql`
-      select player_id, solve_ms, pred_value from solves
-      where completed and pred_unit = 'ms' and pred_value > 0 and source is null`;
-    return rows.map((r) => ({ player_id: String(r.player_id), solve_ms: Number(r.solve_ms), pred_value: Number(r.pred_value) }));
-  }
-  return (await readFileRows())
-    .filter((r) => r.completed && r.pred_unit === "ms" && (r.pred_value ?? 0) > 0 && !r.source)
-    .map((r) => ({ player_id: r.player_id, solve_ms: r.solve_ms, pred_value: r.pred_value as number }));
-}
-
-/** Totals for the stats tiles: completed solves and distinct players. */
+/** Completed solves and distinct players. */
 export async function solveTotals(): Promise<{ solves: number; players: number }> {
   const sql = getSql();
   if (sql) {
@@ -288,43 +264,7 @@ async function savePlayerInner(playerId: string, nickname: string | null): Promi
   return "ok";
 }
 
-export async function savePlayer(playerId: string, nickname: string | null): Promise<SavePlayerResult> {
-  const result = await savePlayerInner(playerId, nickname);
-  if (result === "ok") dropSnapshot();
-  return result;
-}
-
-// ---------- crowd board data ------------------------------------------------------------------
-
-/** Completed regular-mode solves for the crowd board. Demo volunteers and Extreme solves are left out. */
-export async function crowdSolves(): Promise<CrowdSolve[]> {
-  const sql = getSql();
-  if (sql) {
-    const rows = await sql`
-      select player_id, puzzle_id, solve_ms from solves
-      where completed and mode = 'regular' and source is distinct from 'demo'`;
-    return rows.map((r) => ({ player_id: String(r.player_id), puzzle_id: String(r.puzzle_id), solve_ms: Number(r.solve_ms) }));
-  }
-  return (await readFileRows())
-    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.source !== "demo")
-    .map((r) => ({ player_id: r.player_id, puzzle_id: r.puzzle_id, solve_ms: r.solve_ms }));
-}
-
-// ---------- extreme mode data -----------------------------------------------------------------
-
-/** Extreme wins: completed under the clock, live-site solves only. margin = limit - solve time (always > 0). */
-export async function extremeWins(): Promise<ExtremeWin[]> {
-  const sql = getSql();
-  if (sql) {
-    const rows = await sql`
-      select player_id, (extreme_limit_ms - solve_ms) as margin_ms from solves
-      where completed and mode = 'extreme' and extreme_limit_ms is not null and extreme_limit_ms > solve_ms and source is null`;
-    return rows.map((r) => ({ player_id: String(r.player_id), margin_ms: Number(r.margin_ms) }));
-  }
-  return (await readFileRows())
-    .filter((r) => r.completed && r.mode === "extreme" && r.extreme_limit_ms != null && r.extreme_limit_ms > r.solve_ms && !r.source)
-    .map((r) => ({ player_id: r.player_id, margin_ms: (r.extreme_limit_ms as number) - r.solve_ms }));
-}
+export const savePlayer = savePlayerInner;
 
 /**
  * Median solve time per puzzle over completed regular-mode solves (Extreme solves are left out so the clock does not
@@ -354,44 +294,27 @@ export async function puzzleMedians(): Promise<Record<string, { median_ms: numbe
   return out;
 }
 
-// ---------- leaderboard snapshot (shared 5 s cache) ------------------------------------------
+// ---------- live totals (shared 5 s cache) ---------------------------------------------------
 
-export interface LeaderboardSnapshot {
-  solves: PredictedSolve[];
-  names: Map<string, string>; // every nickname, so "you" never needs its own query
-  totals: { solves: number; players: number };
-  extreme: ExtremeWin[];
-  crowd: CrowdSolve[];
+export interface Totals {
+  solves: number;
+  players: number;
 }
 
-const SNAPSHOT_MS = 5_000;
-let snapshot: { at: number; data: LeaderboardSnapshot } | null = null;
-let loading: Promise<LeaderboardSnapshot> | null = null;
-
-async function allNicknames(): Promise<Map<string, string>> {
-  const sql = getSql();
-  if (sql) {
-    const rows = await sql`select player_id, nickname from players`;
-    return new Map(rows.map((r) => [String(r.player_id), String(r.nickname)]));
-  }
-  const all = await readFilePlayers();
-  return new Map([...all].map(([id, l]) => [id, l.nickname!]));
-}
+const TOTALS_MS = 5_000;
+let totals: { at: number; data: Totals } | null = null;
+let loading: Promise<Totals> | null = null;
 
 /**
- * Everything the leaderboard and the live counters need, read once and shared for 5 seconds. Many open tabs
- * polling every 10 s therefore cost one round of database reads per 5 s per server instance, not one per tab.
- * Concurrent callers share a single in-flight load. A nickname change on this instance drops the cache.
+ * The live counters for /demo, read once and shared for 5 seconds. Many open tabs polling every 10 s therefore cost one
+ * database read per 5 s per server instance, not one per tab. Concurrent callers share a single in-flight load.
  */
-export async function leaderboardSnapshot(): Promise<LeaderboardSnapshot> {
-  if (snapshot && Date.now() - snapshot.at < SNAPSHOT_MS) return snapshot.data;
+export async function totalsSnapshot(): Promise<Totals> {
+  if (totals && Date.now() - totals.at < TOTALS_MS) return totals.data;
   loading ??= (async () => {
     try {
-      const [solves, names, totals, extreme, crowd] = await Promise.all([
-        predictedSolves(), allNicknames(), solveTotals(), extremeWins(), crowdSolves(),
-      ]);
-      const data = { solves, names, totals, extreme, crowd };
-      snapshot = { at: Date.now(), data };
+      const data = await solveTotals();
+      totals = { at: Date.now(), data };
       return data;
     } finally {
       loading = null;
@@ -400,9 +323,9 @@ export async function leaderboardSnapshot(): Promise<LeaderboardSnapshot> {
   return loading;
 }
 
-/** Forget the cached snapshot (tests, and nickname writes on this instance). */
-export function dropSnapshot() {
-  snapshot = null;
+/** Forget the cached totals (tests). */
+export function dropTotals() {
+  totals = null;
 }
 
 // ---------- stuck heatmap ---------------------------------------------------------------------

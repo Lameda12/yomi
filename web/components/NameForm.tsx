@@ -2,15 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { NICKNAME_MAX, validateNickname } from "@/lib/nickname";
-import { markStartDone, saveNickname, savedNickname } from "@/lib/player";
+import { saveNickname, savedNickname } from "@/lib/player";
 
-// One input, used by the start screen ("start") and by "Change name" ("change").
-export default function NameForm({ variant, onDone, onCancel }: { variant: "start" | "change"; onDone: () => void; onCancel?: () => void }) {
+// One input, used by "Change name" in the menu. The name only shows on result links you share.
+export default function NameForm({ onDone, onCancel }: { onDone: () => void; onCancel?: () => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const start = variant === "start";
 
   // Prefill the current name, and focus the input on desktop only (a phone keyboard would cover the screen).
   useEffect(() => {
@@ -20,24 +19,19 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
     if (window.matchMedia("(pointer: fine)").matches) input.current?.focus();
   }, []);
 
-  const finish = () => {
-    markStartDone();
-    onDone();
-  };
-
-  // Play / Save. A blank box on the start screen just means "no nickname".
+  // Save. A blank box means "no nickname".
   const submit = async () => {
     if (busy) return;
     const checked = validateNickname(name);
     if (!checked.ok) return setError(checked.error); // the server checks again; this is only for fast feedback
-    if (checked.nickname === null) return start ? finish() : void (await clear());
+    if (checked.nickname === null) return void (await clear());
     setBusy(true);
     setError(null);
     const out = await saveNickname(checked.nickname);
     setBusy(false);
     if (out.status === "taken" || out.status === "invalid") return setError(out.message ?? "That name did not work.");
     // "later": the name is kept on this device and retried on the next load. Never block play.
-    finish();
+    onDone();
   };
 
   const clear = async () => {
@@ -47,7 +41,7 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
     setBusy(false);
     if (out.status === "later") return setError("Could not reach the server, try again.");
     setName("");
-    finish();
+    onDone();
   };
 
   return (
@@ -58,11 +52,11 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
       }}
       className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-foreground/20 p-6 text-center"
     >
-      <p className="text-sm font-semibold">{start ? "Put your name on the leaderboard?" : "Change your leaderboard name"}</p>
+      <p className="text-sm font-semibold">Name on your shared results</p>
 
       <div className="flex w-full flex-col gap-1 text-left">
         <label htmlFor="nickname" className="sr-only">
-          Nickname for the leaderboard
+          Nickname for shared results
         </label>
         <input
           id="nickname"
@@ -73,10 +67,10 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
             setName(e.target.value);
             setError(null);
           }}
-          placeholder="Nickname for the leaderboard"
+          placeholder="Nickname (optional)"
           autoComplete="off"
           autoCapitalize="words"
-          enterKeyHint={start ? "go" : "done"}
+          enterKeyHint="done"
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? "nickname-error" : undefined}
           className="min-h-11 w-full rounded-lg border border-foreground/30 bg-background px-3 text-base"
@@ -89,33 +83,20 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
       </div>
 
       <div className="flex w-full flex-col gap-2">
-        {start ? (
-          <>
-            <button type="button" onClick={finish} disabled={busy} className="min-h-11 rounded-lg bg-foreground px-6 py-2 text-background disabled:opacity-50">
-              Skip, stay anonymous
-            </button>
-            <button type="submit" disabled={busy} className="min-h-11 rounded-lg border border-foreground/30 px-6 py-2 disabled:opacity-50">
-              Save nickname
-            </button>
-          </>
-        ) : (
-          <>
-            <button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-foreground px-6 py-2 text-background disabled:opacity-50">
-              Save
-            </button>
-            <div className="flex gap-2">
-              <button type="button" onClick={() => void clear()} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
-                Go anonymous
-              </button>
-              <button type="button" onClick={onCancel} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
+        <button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-foreground px-6 py-2 text-background disabled:opacity-50">
+          Save
+        </button>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => void clear()} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
+            Go anonymous
+          </button>
+          <button type="button" onClick={onCancel} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
+            Cancel
+          </button>
+        </div>
       </div>
 
-      <p className="text-xs opacity-60">Anonymous. No signup. Your nickname only shows on the leaderboard.</p>
+      <p className="text-xs opacity-60">Anonymous by default. A nickname only shows on result links you share, as &quot;Anon xxxx&quot; otherwise.</p>
     </form>
   );
 }

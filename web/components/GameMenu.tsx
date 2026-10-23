@@ -86,11 +86,14 @@ export default function GameMenu(p: MenuProps) {
         <button onClick={p.onHowTo} disabled={!p.canHowTo} className={row}>
           How to play
         </button>
-        <Link href="/stats" className={row}>
-          Stats
+        <Link href="/you" className={row}>
+          Your attempts
         </Link>
-        <Link href="/board" className={row}>
-          Most Unpredictable in Yomi
+        <Link href="/stats" className={row}>
+          What the data shows
+        </Link>
+        <Link href="/learn" className={row}>
+          How Yomi learns
         </Link>
         <Link href="/what-we-store" className={row}>
           What we store

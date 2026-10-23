@@ -1,7 +1,7 @@
 // Browser-side helpers for the anonymous player id and the optional nickname. Client code only.
 // Everything is best-effort: storage can be blocked and the network can fail, and neither may stop play.
 export const PLAYER_KEY = "yomi_player"; // random id this browser made for itself
-export const START_KEY = "yomi_start_done"; // the start screen was answered (name or skip); never show it again
+export const START_KEY = "yomi_start_done"; // set by an older start screen; read only, so those players skip the how-to-play
 export const NICK_KEY = "yomi_nick"; // the nickname the server accepted
 const PENDING_KEY = "yomi_nick_pending"; // typed but not saved yet (offline, rate limited); retried on the next load
 
@@ -32,7 +32,6 @@ export function getPlayerId(): string {
 export const peekPlayerId = () => read(PLAYER_KEY) ?? undefined;
 
 export const startDone = () => read(START_KEY) === "1";
-export const markStartDone = () => write(START_KEY, "1");
 export const savedNickname = () => read(NICK_KEY) ?? read(PENDING_KEY) ?? "";
 
 export type SaveStatus = "ok" | "taken" | "invalid" | "later";

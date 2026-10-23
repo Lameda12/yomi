@@ -164,8 +164,11 @@ test("plain English: no empty text, no em dashes", () => {
   }
 });
 
-test("the page says what the data trains and ranks", () => {
+test("the page says what the data trains, that training is manual, and that nobody is ranked", () => {
   const uses = USES.join(" ");
   assert.match(uses, /train the model/);
-  assert.match(uses, /leaderboard/);
+  assert.match(uses, /manual batch job/);
+  assert.match(uses, /does not change while you play/);
+  const all = [...SOLVES.flatMap((i) => [i.what, i.why]), ...PLAYERS.flatMap((i) => [i.what, i.why]), ...USES, ...LIMITS, ...NOT_STORED.map((n) => n.detail)].join(" ");
+  assert.doesNotMatch(all, /leaderboard|Most Unpredictable|\brank/i, "there is no ranking of people any more");
 });
