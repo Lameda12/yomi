@@ -5,6 +5,7 @@ import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
 import { explainGap, targetCopy } from "@/lib/explain";
 import { finishKind } from "@/lib/finish";
+import { sharePath, shareMessage } from "@/lib/share";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
 import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
@@ -172,8 +173,9 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [submit, setSubmit] = useState<Submit>("none");
   const [stuck, setStuck] = useState<Cell | null>(null);
   // Facts about the solve that just ended, for the result card. Cleared with the next attempt.
-  const [solveInfo, setSolveInfo] = useState<{ pauseMs: number | null; firstSolve: boolean; mode: Mode; bestMs: number | null; previousBest: number | null; newBest: boolean } | null>(null);
+  const [solveInfo, setSolveInfo] = useState<{ solveId: string; pauseMs: number | null; firstSolve: boolean; mode: Mode; bestMs: number | null; previousBest: number | null; newBest: boolean } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [shareFallback, setShareFallback] = useState<string | null>(null); // the message, shown when neither share sheet nor clipboard worked
   // Predicted stuck cells arrive only after the solve ends, tagged with their puzzle so a late reply is ignored.
   const [predStuck, setPredStuck] = useState<{ id: string; cells: Cell[] } | null>(null);
   // Demo screen only: each volunteer is a fresh anonymous player (so one person at the keyboard is not one "player"
@@ -370,6 +372,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         const rec = demo ? null : recordBest(readBest(), key, ms);
         if (rec) writeBest(rec.map);
         setSolveInfo({
+          solveId: a.solveId,
           pauseMs: maxPauseMs,
           firstSolve: demo || readList(DONE_KEY).length === 0, // each demo volunteer is a fresh player
           mode: a.mode,
@@ -485,6 +488,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setExtremeWin(null);
     setLockedLimit(null);
     setCopied(false);
+    setShareFallback(null);
   };
 
   // Instant retry after a timeout: same puzzle, fresh attempt, clock waits for the first move again.
@@ -520,13 +524,27 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     writeLocal(MODE_KEY, m);
   };
 
-  const shareLine = `Yomi #${number}: ${clock(elapsed)}, ${backtracks} backtrack${backtracks === 1 ? "" : "s"}`;
-  const copyShare = async () => {
+  // Share this result. Once the solve is saved the message carries /r/<solve id>, a page built from what the server
+  // stored. Before that, or if saving failed, it carries the plain site link. Phones get the share sheet, the rest the clipboard.
+  const shareResult = async () => {
+    const origin = window.location.origin;
+    const link = submit === "saved" && solveInfo ? `${origin}${sharePath(solveInfo.solveId)}` : origin;
+    const text = shareMessage(`Yomi #${number}`, elapsed, backtracks, link);
     try {
-      await navigator.clipboard.writeText(`${shareLine} ${window.location.origin}`);
+      if (typeof navigator.share === "function") {
+        await navigator.share({ text });
+        return;
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return; // closed the share sheet: nothing to do
+    }
+    try {
+      await navigator.clipboard.writeText(text);
       setCopied(true);
+      setShareFallback(null);
     } catch {
-      setCopied(false); // clipboard blocked: the line is still selectable on screen
+      setCopied(false);
+      setShareFallback(text); // clipboard blocked: the message is selectable on screen
     }
   };
 
@@ -852,11 +870,17 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               </p>
             )}
             {!demo && (<>
-            <div className="flex items-center gap-2">
-              <code className="select-all rounded-md bg-foreground/10 px-3 py-1.5">{shareLine}</code>
-              <button onClick={copyShare} className="rounded-md border border-foreground/30 px-3 py-1.5">
-                {copied ? "Copied" : "Copy"}
+            <div className="flex w-full flex-col items-center gap-1">
+              <button
+                onClick={shareResult}
+                disabled={submit === "sending"}
+                className="min-h-11 w-full rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50"
+                data-testid="share"
+              >
+                {submit === "sending" ? "Saving…" : copied ? "Link copied" : "Share result"}
               </button>
+              {(submit === "queued" || submit === "failed") && <p className="text-xs opacity-70">This solve is not saved yet, so the message links to the site instead of this result.</p>}
+              {shareFallback && <code className="select-all break-all rounded-md bg-foreground/10 px-3 py-1.5 text-xs" data-testid="share-fallback">{shareFallback}</code>}
             </div>
             <div className="flex flex-col items-center gap-1" aria-label={`Solved ${streak.week.filter(Boolean).length} of the last 7 days`}>
               <div className="flex gap-1.5">
