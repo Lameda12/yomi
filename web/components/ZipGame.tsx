@@ -585,7 +585,8 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             <span className="font-mono text-3xl tabular-nums" aria-label="Time">
               {clock(elapsed)}
             </span>
-            <StreakChip count={streak.count} atRisk={streak.atRisk} />
+            {/* once solved, the result card shows the streak instead */}
+            <StreakChip count={status === "solved" ? 0 : streak.count} atRisk={streak.atRisk} />
           </div>
           <button onClick={() => setMenuOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4 py-2 text-sm" data-testid="menu-button">
             Menu

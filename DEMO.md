@@ -23,6 +23,12 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 3. The main screen is the timer, the prediction line, the grid and Undo/Reset. Mode (Regular/Extreme), skip, stats, the board, change name, streak and the privacy note are in **Menu**.
 4. The nickname is optional and never blocks play: after the first solve the card asks "Want your name on the board?", with **No thanks** as the main button.
 
+## Prediction and result card (regular screen)
+
+- **Before the solve** the prediction sits in a highlighted box above the grid. With a human-time model it reads "Target: beat 0:42". While the model is the solver-effort stand-in it reads "Yomi's read: on the easier side. Can you make it look easy?" with a note that the number is solver steps for a computer, not a time. Say that out loud.
+- **After the solve** one template line explains the gap, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the model is still learning from real players.
+- **Personal best** per grid size and mode (Regular and Extreme are separate), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size and mode just shows the time to beat. The demo screen has no personal best.
+
 ## Live demo screen (`/demo`)
 
 Open `/demo` on the projector (1080p fits a whole round; at 720p the result text scrolls a little).
@@ -42,4 +48,4 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.
 - *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /stats updates live.
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
-- *Why would anyone come back?* A daily streak: a 🔥 line in the menu, plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
+- *Why would anyone come back?* A daily streak: a small 🔥 counter on the main screen (and on the result card), plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
