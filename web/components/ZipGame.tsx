@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
-import { explainGap, targetCopy } from "@/lib/explain";
+import { explainGap, gapParts, objectiveLine, targetCopy, type GapInput } from "@/lib/explain";
 import { finishKind } from "@/lib/finish";
 import { sharePath, shareMessage } from "@/lib/share";
 import { findStuck, type GameEvent } from "@/lib/stuck";
@@ -555,6 +555,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
 
   const today = new Date();
   const streak = streakState(streakDays, today);
+  // How the solve compared with the prediction: a headline (percent faster/slower) plus one explanation line.
+  const gapInput: GapInput | null =
+    status === "solved" && prediction && predicted && solveInfo
+      ? {
+          actualMs: elapsed,
+          predicted: { value: predicted.value, unit: predicted.unit },
+          label: prediction.label,
+          backtracks,
+          pause: solveInfo.pauseMs === null ? null : { ms: solveInfo.pauseMs, cell: stuck },
+          dots,
+          firstTime: solveInfo.firstSolve,
+        }
+      : null;
+  const gap = gapInput ? gapParts(gapInput) : null;
   const dayLetter = (back: number) => "SMTWTFS"[new Date(daysBefore(today, back) + "T12:00").getDay()];
 
   const limit = lockedLimit ?? limitInfo?.ms ?? 0;
@@ -666,6 +680,12 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           </div>
           <p className="text-[11px] opacity-70">{limitInfo.ready ? `${basis}. Clock starts on your first move.` : "One moment."}</p>
         </div>
+      )}
+
+      {!demo && status !== "solved" && (
+        <p className="text-center text-xs opacity-80" data-testid="objective">
+          {objectiveLine(dots.length)}
+        </p>
       )}
 
       <div
@@ -798,6 +818,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         {demo && status === "idle" && <p>Start at 1. Connect the dots in order and fill every cell.</p>}
         {status === "solved" && (
           <div className="flex flex-col items-center gap-2">
+            {gap?.headline && !demo && (
+              <div className="flex flex-col items-center" data-testid="gap-headline">
+                <p
+                  className={`text-5xl font-extrabold tabular-nums ${gap.headline.tone === "faster" ? "text-green-600" : gap.headline.tone === "slower" ? "text-orange-600" : ""}`}
+                  data-testid="gap-big"
+                >
+                  {gap.headline.big}
+                </p>
+                <p className="text-sm font-medium">{gap.headline.small}</p>
+                <p className="mt-1 text-sm opacity-80" data-testid="gap-line">
+                  {gap.detail}
+                </p>
+              </div>
+            )}
             {extremeWin && (
               <p className="text-xl font-bold text-green-600" data-testid="extreme-win">
                 {extremeWin.marginMs < 1000 ? "Beat Yomi's clock by less than a second" : `Beat Yomi's clock by ${clock(extremeWin.marginMs)}`}
@@ -848,17 +882,9 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                 )}
               </p>
             )}
-            {prediction && predicted && solveInfo && (
+            {gap && gapInput && (demo || !gap.headline) && (
               <p className={demo ? "text-lg" : "text-sm"} data-testid="gap-line">
-                {explainGap({
-                  actualMs: elapsed,
-                  predicted: { value: predicted.value, unit: predicted.unit },
-                  label: prediction.label,
-                  backtracks,
-                  pause: solveInfo.pauseMs === null ? null : { ms: solveInfo.pauseMs, cell: stuck },
-                  dots,
-                  firstTime: solveInfo.firstSolve,
-                })}
+                {demo ? explainGap(gapInput) : gap.detail}
               </p>
             )}
             {predStuck?.id === puzzle.id && (
