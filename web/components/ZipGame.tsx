@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
-import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
+import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
 import { flushQueue, submitSolve } from "@/lib/submit";
+import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
 import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
 import NameForm from "./NameForm";
+import Tutorial from "./Tutorial";
 
 export interface PublicPuzzle {
   id: string;
@@ -150,8 +152,12 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
 });
 
 export default function ZipGame({ puzzles, coreCount, prediction, demo = false }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null; demo?: boolean }) {
-  // First visit on this device: a start screen (nickname or skip) comes before the puzzle, once.
-  const [started, setStarted] = useState(() => demo || startDone());
+  // A new player lands on a puzzle with the tutorial on top, skippable with one tap. People who already played
+  // (a solve, or the old start screen answered) never see it unless they open "How to play".
+  const [tutorial, setTutorial] = useState(() => !demo && !tutorialSeen() && !startDone() && readList(DONE_KEY).length === 0);
+  // The optional nickname prompt on the first result card. Answered (skipped or saved) once, never blocks play.
+  const [nameAsked, setNameAsked] = useState(() => demo || startDone() || savedNickname() !== "");
+  const [nameOpen, setNameOpen] = useState(false);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
   const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount, undefined, demo));
@@ -486,7 +492,10 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     }
   };
 
-  if (!started) return <NameForm variant="start" onDone={() => setStarted(true)} />;
+  const closeTutorial = () => {
+    markTutorialSeen();
+    setTutorial(false);
+  };
 
   const today = new Date();
   const streak = streakState(streakDays, today);
@@ -512,6 +521,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   return (
     <>
     <GameBackground extreme={mode === "extreme"} urgency={urgency} event={bgEvent} />
+    {tutorial && <Tutorial onClose={closeTutorial} />}
     <div
       className={demo ? "flex flex-col items-center gap-3 text-lg" : "flex w-full max-w-md flex-col items-center gap-4"}
       style={demo ? { width: "min(94vw, 52vh)" } : undefined}
@@ -771,6 +781,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               </p>
             </div>
             </>)}
+            {!demo && !nameAsked &&
+              (nameOpen ? (
+                <NameForm variant="start" onDone={() => setNameAsked(true)} />
+              ) : (
+                <p className="flex flex-wrap items-center justify-center gap-2 text-xs" data-testid="name-prompt">
+                  Want your name on the board?
+                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg bg-foreground px-4 text-background">
+                    No thanks
+                  </button>
+                  <button onClick={() => setNameOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4">
+                    Add nickname
+                  </button>
+                </p>
+              ))}
             <p className="text-xs opacity-70">
               {submit === "sending" && "Saving…"}
               {submit === "saved" && "Solve logged. Thank you."}

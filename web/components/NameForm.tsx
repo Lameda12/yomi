@@ -58,16 +58,7 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
       }}
       className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-foreground/20 p-6 text-center"
     >
-      {start ? (
-        <>
-          <h2 className="text-3xl font-bold tracking-tight">
-            Yomi <span className="text-orange-500">読み</span>
-          </h2>
-          <p className="text-sm opacity-80">Connect the dots, fill every cell. Yomi guesses how you&apos;ll do.</p>
-        </>
-      ) : (
-        <p className="text-sm font-semibold">Change your leaderboard name</p>
-      )}
+      <p className="text-sm font-semibold">{start ? "Put your name on the leaderboard?" : "Change your leaderboard name"}</p>
 
       <div className="flex w-full flex-col gap-1 text-left">
         <label htmlFor="nickname" className="sr-only">
@@ -98,22 +89,29 @@ export default function NameForm({ variant, onDone, onCancel }: { variant: "star
       </div>
 
       <div className="flex w-full flex-col gap-2">
-        <button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-foreground px-6 py-2 text-background disabled:opacity-50">
-          {start ? "Play" : "Save"}
-        </button>
         {start ? (
-          <button type="button" onClick={finish} disabled={busy} className="min-h-11 rounded-lg border border-foreground/30 px-6 py-2 disabled:opacity-50">
-            Skip, play anonymously
-          </button>
+          <>
+            <button type="button" onClick={finish} disabled={busy} className="min-h-11 rounded-lg bg-foreground px-6 py-2 text-background disabled:opacity-50">
+              Skip, stay anonymous
+            </button>
+            <button type="submit" disabled={busy} className="min-h-11 rounded-lg border border-foreground/30 px-6 py-2 disabled:opacity-50">
+              Save nickname
+            </button>
+          </>
         ) : (
-          <div className="flex gap-2">
-            <button type="button" onClick={() => void clear()} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
-              Go anonymous
+          <>
+            <button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-foreground px-6 py-2 text-background disabled:opacity-50">
+              Save
             </button>
-            <button type="button" onClick={onCancel} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
-              Cancel
-            </button>
-          </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void clear()} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
+                Go anonymous
+              </button>
+              <button type="button" onClick={onCancel} disabled={busy} className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-50">
+                Cancel
+              </button>
+            </div>
+          </>
         )}
       </div>
 
