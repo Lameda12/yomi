@@ -14,13 +14,6 @@ interface BoardRow {
   ratio?: number; // "vs the crowd": typically x this far off the other players' time
   solves: number;
 }
-interface ExtremeRow {
-  id: string;
-  rank: number;
-  name: string;
-  best_margin_ms: number;
-  wins: number;
-}
 interface You {
   solves: number; // solves that count toward the score
   needed?: number; // "vs Yomi": more solves to qualify
@@ -34,7 +27,6 @@ interface Data {
   basis: "crowd" | "yomi"; // which board is live: switches to "yomi" by itself once the model predicts time
   mode: "open" | "waiting";
   board: BoardRow[];
-  extreme: ExtremeRow[];
   you: You | null;
   players: number;
   totals: { solves: number; players: number };
@@ -42,14 +34,12 @@ interface Data {
   rules: { min_solves: number; top: number; cap: string; open_players: number };
 }
 
-const under = (ms: number) => (ms >= 10_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
 const times = (ratio: number) => `×${ratio >= 10 ? ratio.toFixed(0) : ratio.toFixed(1)}`;
 const off = (ms: number) => (ms >= 10_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
 
 export default function Leaderboard() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
-  const [tab, setTab] = useState<"unpredictable" | "extreme">("unpredictable");
 
   // Bumping `tick` refetches. The fetch lives in the effect so state is only set from its callbacks.
   const [tick, setTick] = useState(0);
@@ -110,7 +100,7 @@ export default function Leaderboard() {
       next.set(id, { top: li.offsetTop, rank });
     }
     seen.current = next;
-  }, [data?.board, data?.extreme, tab]);
+  }, [data?.board]);
 
   // A nickname typed while offline gets another try whenever the board is opened.
   useEffect(() => {
@@ -136,50 +126,17 @@ export default function Leaderboard() {
         <span className="h-2 w-2 rounded-full bg-green-500 motion-safe:animate-pulse" aria-hidden />
         Live · refreshes every 10 s
       </p>
-      <div role="tablist" aria-label="Leaderboards" className="flex w-full rounded-xl border border-foreground/20 p-1">
-        {(["unpredictable", "extreme"] as const).map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={`min-h-11 flex-1 rounded-lg px-3 py-2 text-sm font-medium ${tab === t ? (t === "extreme" ? "bg-orange-500 text-white" : "bg-foreground text-background") : ""}`}
-          >
-            {t === "extreme" ? "Extreme ⚡" : "Unpredictable"}
-          </button>
-        ))}
+      <div className="flex flex-col gap-1 text-center">
+        <h2 className="text-lg font-semibold" data-testid="board-title">
+          Most Unpredictable ({data.basis === "crowd" ? "vs the crowd" : "vs Yomi"})
+        </h2>
+        <p className="text-sm opacity-70">
+          {data.basis === "crowd"
+            ? "Whose times are hardest to guess? Biggest gap from the typical time of other players on the same puzzle wins."
+            : "Who does Yomi get most wrong? Biggest gap between its time guess and yours wins."}
+        </p>
       </div>
-      {tab === "unpredictable" && (
-        <div className="flex flex-col gap-1 text-center">
-          <h2 className="text-lg font-semibold" data-testid="board-title">
-            Most Unpredictable ({data.basis === "crowd" ? "vs the crowd" : "vs Yomi"})
-          </h2>
-          <p className="text-sm opacity-70">
-            {data.basis === "crowd"
-              ? "Whose times are hardest to guess? Biggest gap from the typical time of other players on the same puzzle wins."
-              : "Who does Yomi get most wrong? Biggest gap between its time guess and yours wins."}
-          </p>
-        </div>
-      )}
-      {tab === "extreme" ? (
-        <section className="flex flex-col gap-2" data-testid="extreme-board">
-          <p className="text-center text-xs opacity-70">Best margin under Yomi&apos;s clock. Switch the game to Extreme and beat it.</p>
-          {data.extreme.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-foreground/25 p-5 text-center text-sm opacity-80">No Extreme wins yet. Be the first.</p>
-          ) : (
-            <ol ref={listRef} className="relative flex flex-col gap-1.5" aria-label="Extreme leaderboard">
-              {data.extreme.map((r) => (
-                <li key={r.id} data-id={r.id} data-rank={r.rank} className="flex min-h-11 items-center gap-3 rounded-xl border border-foreground/15 px-3 py-2 text-sm">
-                  <span className="w-6 font-mono tabular-nums opacity-60">{r.rank}</span>
-                  <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
-                  <span className="font-mono tabular-nums">beat it by {under(r.best_margin_ms)}</span>
-                  <span className="w-12 text-right font-mono text-xs opacity-50">{r.wins}×</span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-      ) : data.mode === "waiting" ? (
+      {data.mode === "waiting" ? (
         <section className="flex flex-col gap-3 rounded-2xl border border-foreground/20 p-5 text-sm" data-testid="waiting">
           <p className="text-base font-semibold">
             Opens at {data.progress.need} players × {data.rules.min_solves} solves: <span data-testid="progress">{data.progress.players}/{data.progress.need}</span> players so far

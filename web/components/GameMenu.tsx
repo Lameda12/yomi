@@ -14,6 +14,7 @@ export interface MenuProps {
   onMode: (m: "regular" | "extreme") => void;
   onSkip: () => void;
   skipLabel: string;
+  canSkip?: boolean; // not between sprint runs, when there is nothing to skip
   canHowTo: boolean; // not while a clock is running
   onHowTo: () => void;
 }
@@ -75,11 +76,13 @@ export default function GameMenu(p: MenuProps) {
             </button>
           ))}
         </div>
-        {!p.canChangeMode && <p className="text-center text-xs opacity-70">Mode can change before your first move.</p>}
+        {!p.canChangeMode && <p className="text-center text-xs opacity-70">Mode can change before your first move, or after a run.</p>}
 
-        <button onClick={p.onSkip} className={row}>
-          {p.skipLabel}
-        </button>
+        {p.canSkip !== false && (
+          <button onClick={p.onSkip} className={row}>
+            {p.skipLabel}
+          </button>
+        )}
         <button onClick={p.onHowTo} disabled={!p.canHowTo} className={row}>
           How to play
         </button>

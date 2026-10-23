@@ -3,10 +3,9 @@ import { test } from "node:test";
 import { mulberry32 } from "../lib/background.ts";
 import { MAX_LIFE, burstDuration, finishKind, spawnSparks } from "../lib/finish.ts";
 
-test("outcome decides the effect: full on a win, subtle on an Extreme loss, none on a timeout", () => {
+test("outcome decides the effect: full for a Regular solve, light for a sprint solve", () => {
   assert.equal(finishKind("win"), "full");
-  assert.equal(finishKind("late"), "subtle");
-  assert.equal(finishKind("timeout"), null);
+  assert.equal(finishKind("sprint"), "subtle");
 });
 
 test("a full burst has more, bigger and faster sparks than a subtle one", () => {
