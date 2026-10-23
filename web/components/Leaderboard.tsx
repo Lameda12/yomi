@@ -197,7 +197,7 @@ export default function Leaderboard() {
           <p className="opacity-70">
             {data.progress.players >= data.progress.need
               ? data.basis === "crowd"
-                ? "Enough people have played, but a puzzle needs 3 other players' times before it can score anyone. Play the same puzzles as your friends."
+                ? "Enough people have played, but a puzzle needs 2 other players' times before it can score anyone. Play the same puzzles as your friends."
                 : "Enough people have played. Scores appear as soon as their solves have a time prediction."
               : `Play ${data.rules.min_solves} puzzles and tell a friend to do the same.`}
           </p>
@@ -239,7 +239,7 @@ export default function Leaderboard() {
                 <b>{data.rules.min_solves - (you.played ?? 0)}</b> more solve{data.rules.min_solves - (you.played ?? 0) === 1 ? "" : "s"} to qualify ({you.played ?? 0} of {data.rules.min_solves} so far).
               </>
             ) : (
-              <>You&apos;ve played enough. {you.solves} of your solves have 3+ other players&apos; times to compare with; you need {data.rules.min_solves}.</>
+              <>You&apos;ve played enough. {you.solves} of your solves have 2+ other players&apos; times to compare with; you need {data.rules.min_solves}.</>
             )
           ) : (you.needed ?? 0) > 0 ? (
             <>

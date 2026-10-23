@@ -31,18 +31,27 @@ test("the median is taken over other players only, never the player's own time",
   assert.ok(Math.abs(d.ratio - 10) < 1e-9, `d should be exactly x10 off, got ${d.ratio}`); // capped at ln(10) too
 });
 
-test("a puzzle needs 3+ other players' solves before it counts; players need 3 qualifying solves", () => {
-  // only 3 players: each puzzle has 2 others at most, so nobody qualifies yet
+test("a puzzle needs 2+ other players' solves before it counts; players need 3 qualifying solves", () => {
+  // 3 players on 3 puzzles: each solve has 2 others (a median of 2 is fine), so everyone qualifies: 3 players x 3 solves
   const three = ["x", "y", "z"].flatMap((pz) => ["a", "b", "c"].map((p) => s(p, pz, 10_000)));
   const r = buildCrowdBoard(three, none);
-  assert.equal(r.board.length, 0);
-  assert.deepEqual(r.progress, { players: 3, need: 3 }, "all three have played 3, but there is no crowd to compare with yet");
-  // 4 players on 3 puzzles: now everyone has 3 others
-  const four = ["x", "y", "z"].flatMap((pz) => ["a", "b", "c", "d"].map((p) => s(p, pz, 10_000)));
-  assert.equal(buildCrowdBoard(four, none).board.length, 4);
-  // 4 players but only 2 puzzles: 2 qualifying solves each, below the 3 needed
-  const short = ["x", "y"].flatMap((pz) => ["a", "b", "c", "d"].map((p) => s(p, pz, 10_000)));
+  assert.equal(r.board.length, 3);
+  assert.deepEqual(r.progress, { players: 3, need: 3 });
+  // only 2 players: each solve has just 1 other player, so nothing counts yet
+  const two = ["x", "y", "z"].flatMap((pz) => ["a", "b"].map((p) => s(p, pz, 10_000)));
+  const w = buildCrowdBoard(two, none);
+  assert.equal(w.board.length, 0);
+  assert.equal(w.progress.players, 2);
+  // 3 players but only 2 puzzles: 2 qualifying solves each, below the 3 needed
+  const short = ["x", "y"].flatMap((pz) => ["a", "b", "c"].map((p) => s(p, pz, 10_000)));
   assert.equal(buildCrowdBoard(short, none).board.length, 0);
+});
+
+test("the median of two other players is their average", () => {
+  const rows = ["x", "y", "z"].flatMap((pz) => [s("a", pz, 10_000), s("b", pz, 30_000), s("me", pz, 20_000)]);
+  // a is judged against median(30 s, 20 s) = 25 s -> x2.5; b against median(10 s, 20 s) = 15 s -> x2; me against 20 s -> x1
+  const ratios = buildCrowdBoard(rows, none).board.map((r) => Math.round(r.ratio * 100) / 100);
+  assert.deepEqual(ratios, [2.5, 2, 1]);
 });
 
 test("each solve counts at most x10 off, so walking away cannot buy the top spot", () => {

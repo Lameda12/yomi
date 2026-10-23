@@ -3,13 +3,13 @@
 //   error(solve) = |ln(actual_ms / median_ms)|, the median being that puzzle's regular solve times from OTHER players
 //   score(player) = mean error over their solves, 3+ qualifying solves; the biggest score ranks first
 //
-// A solve only qualifies when 3+ solves by other players exist on that puzzle. A ratio (log) is used so a slow 5x5
+// A solve only qualifies when 2+ solves by other players exist on that puzzle (a median of 2 is fine). A ratio (log) is used so a slow 5x5
 // and a slow 6x6 count alike. Each solve counts at most CAP_LN off (x10), so walking away cannot buy the top spot.
 // Inputs are completed regular-mode solves with demo volunteers already left out. Never returns a player_id.
 import { rowId, anonName } from "./leaderboard.ts";
 
 export const MIN_QUALIFYING = 3; // qualifying solves a player needs
-export const MIN_OTHERS = 3; // other players' solves a puzzle needs before it counts as a crowd
+export const MIN_OTHERS = 2; // other players' solves a puzzle needs before it counts as a crowd
 export const CAP_LN = Math.log(10);
 export const PLAYERS_TO_OPEN = 3; // shown as "Opens at 3 players x 3 solves"
 
