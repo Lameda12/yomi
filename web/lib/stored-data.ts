@@ -88,7 +88,7 @@ export const NOT_STORED: { item: string; detail: string }[] = [
   { item: "Your location", detail: "Nothing asks for it." },
   { item: "Browser or device identifiers", detail: "Only \"mouse\" or \"touch\" is saved. The code never reads your browser's identity string." },
   { item: "Cookies", detail: "Yomi sets none. Your anonymous ID lives in your browser's local storage instead." },
-  { item: "Analytics or ad trackers", detail: "There are none in the code." },
+  { item: "Analytics or ad trackers", detail: "Vercel Web Analytics is used to track page views and Web Vitals (performance metrics). It does not use cookies and respects Do Not Track. No other analytics or ad trackers are present." },
 ];
 
 export const USES: string[] = [

@@ -102,9 +102,11 @@ test("the code never reads IPs, cookies, geolocation, the user agent or request 
   assert.doesNotMatch(read("next.config.ts"), /headers\s*\(/);
 });
 
-test("no analytics or tracking packages or scripts", () => {
+test("only allowed analytics packages", () => {
   const pkg = JSON.parse(read("package.json")) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
+  const allowed = new Set(["@vercel/analytics"]);
   for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
+    if (allowed.has(name)) continue;
     assert.doesNotMatch(name, /analytics|gtag|google-tag|sentry|segment|mixpanel|posthog|amplitude|hotjar|fullstory|datadog|logrocket|clarity/i, name);
   }
   assert.doesNotMatch(read("app/layout.tsx"), /<script|next\/script/);
