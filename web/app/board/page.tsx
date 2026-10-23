@@ -3,7 +3,7 @@ import Link from "next/link";
 import Leaderboard from "@/components/Leaderboard";
 
 export const metadata: Metadata = {
-  title: "Most Unpredictable at Dal · Yomi",
+  title: "Most Unpredictable in Yomi",
   description: "Whose solve times are hardest to predict? Ranked against the crowd, and against Yomi once it predicts time.",
 };
 
@@ -13,7 +13,7 @@ export default function BoardPage() {
       <header className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="text-2xl font-bold tracking-tight">
-            Most Unpredictable <span className="text-orange-500">at Dal</span>
+            Most Unpredictable <span className="text-orange-500">in Yomi</span>
           </h1>
           <Link href="/" className="text-sm opacity-60 hover:opacity-100">
             ← play

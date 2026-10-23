@@ -6,7 +6,9 @@ import { dedupeBySolveId } from "./dedupe.ts";
 import type { CrowdSolve } from "./crowdBoard.ts";
 import { MIN_CROWD } from "./extreme.ts";
 import type { ExtremeWin } from "./extremeBoard.ts";
+import { anonName } from "./leaderboard.ts";
 import { nicknameKey } from "./nickname.ts";
+import { isShareId, toShared, type SharedSolve } from "./share.ts";
 import type { GameEvent } from "./stuck.ts";
 
 /** One stored attempt, shaped like a row of the `solves` table. */
@@ -121,6 +123,40 @@ export async function allSolves(): Promise<SolveRow[]> {
 
 /** File-mode rows for the CSV export (Neon mode streams pages straight from the database). */
 export const fileSolves = readFileRows;
+
+// ---------- shared results ----------------------------------------------------------------------
+
+/** One finished solve for its share page, by the id the client made for it. Null when there is no such solve. */
+export async function getSharedSolve(solveId: string): Promise<SharedSolve | null> {
+  if (!isShareId(solveId)) return null;
+  const sql = getSql();
+  let row: (Parameters<typeof toShared>[0] & { player_id: string }) | undefined;
+  if (sql) {
+    const [r] = await sql`
+      select solve_id, player_id, puzzle_id, grid_size, solve_ms, backtracks, completed, mode, extreme_limit_ms, pred_value, pred_unit
+      from solves where solve_id = ${solveId}`;
+    if (r) {
+      row = {
+        solve_id: String(r.solve_id),
+        player_id: String(r.player_id),
+        puzzle_id: String(r.puzzle_id),
+        grid_size: Number(r.grid_size),
+        solve_ms: Number(r.solve_ms),
+        backtracks: Number(r.backtracks),
+        completed: Boolean(r.completed),
+        mode: r.mode === "extreme" ? "extreme" : "regular",
+        extreme_limit_ms: r.extreme_limit_ms === null ? null : Number(r.extreme_limit_ms),
+        pred_value: r.pred_value === null ? null : Number(r.pred_value),
+        pred_unit: r.pred_unit ?? null,
+      };
+    }
+  } else {
+    row = (await readFileRows()).find((r) => r.solve_id === solveId);
+  }
+  if (!row) return null;
+  const name = (await getNicknames([row.player_id])).get(row.player_id) ?? anonName(row.player_id);
+  return toShared(row, name);
+}
 
 // ---------- leaderboard + nicknames ----------------------------------------------------------
 

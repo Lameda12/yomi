@@ -36,6 +36,13 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - **Next puzzle** is the one orange button on the result card. It stays pinned to the bottom of the screen and has focus, so Enter works on a keyboard.
 - With `prefers-reduced-motion` the path snaps and there is no spark effect.
 
+## Sharing a result
+
+- **Share result** on the result card opens the phone's share sheet (or copies the message on a laptop). The message carries a link like `/r/<solve id>`.
+- That page shows the time, backtracks and mode **as the server stored them** (derived from the move log), never numbers typed into the URL, so a link cannot be edited into a fake time. It shows the player's nickname if they set one, otherwise "Anon xxxx". It never shows the anonymous player id or the move log, is not indexed by search engines, and has a generated link preview image.
+- It only compares with Yomi's guess when the model predicted a time. While the model is the solver-effort stand-in it says nothing about a prediction.
+- If the solve could not be saved yet, the message links to the site instead, and the card says why.
+
 ## Live demo screen (`/demo`)
 
 Open `/demo` on the projector (1080p fits a whole round; at 720p the result text scrolls a little).

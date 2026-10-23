@@ -47,7 +47,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 3. **Stuck-point highlights:** show the 3 predicted cells on the result card only, after the solve ends. Never before.
 4. **Stuck cells on the result card:** wired (`/api/stuck`, after the solve only) but empty until the stuck model is fitted on 30+ real solves.
 5. **Stats page:** totals that match the database (extra test).
-6. **Sprint 3 (Oct 22 to 29):** personalization, "Most Unpredictable at Dal" leaderboard, model-tuned daily difficulty, retrain on the full data, showcase rehearsal.
+6. **Sprint 3 (Oct 22 to 29):** personalization, "Most Unpredictable in Yomi" leaderboard, model-tuned daily difficulty, retrain on the full data, showcase rehearsal.
 
 ## Run it locally
 
