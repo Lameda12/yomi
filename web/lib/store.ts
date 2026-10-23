@@ -353,3 +353,26 @@ export async function stuckHeat(puzzleId: string): Promise<{ cells: { r: number;
   }
   return { cells, total: cells.reduce((a, x) => a + x.n, 0) };
 }
+
+// ---------- one player's own attempts ------------------------------------------------------------
+
+/** A player's own attempts, newest first, capped at `limit`, with the total. Only ever called with the caller's own id. */
+export async function playerSolves(playerId: string, limit = 100): Promise<{ rows: SolveRow[]; total: number }> {
+  const sql = getSql();
+  if (sql) {
+    const [{ n }] = await sql`select count(*)::int as n from solves where player_id = ${playerId}`;
+    const rows = await sql`select * from solves where player_id = ${playerId} order by id desc limit ${limit}`;
+    return {
+      total: n,
+      rows: rows.map((r) => ({
+        ...(r as SolveRow),
+        id: Number(r.id),
+        created_at: new Date(r.created_at).toISOString(),
+        started_at_ms: Number(r.started_at_ms),
+        ended_at_ms: Number(r.ended_at_ms),
+      })),
+    };
+  }
+  const mine = (await readFileRows()).filter((r) => r.player_id === playerId).sort((a, b) => b.id - a.id);
+  return { total: mine.length, rows: mine.slice(0, limit) };
+}

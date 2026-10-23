@@ -68,6 +68,14 @@ test("the players API accepts exactly the fields the page lists", () => {
   assert.deepEqual([...line.matchAll(/(\w+): z\./g)].map((m) => m[1]).sort(), [...API_PLAYER_FIELDS].sort());
 });
 
+test("the Your attempts API takes only the anonymous id, is POST-only, and never echoes it", () => {
+  const src = read("app/api/me/route.ts");
+  assert.match(src, /const Body = z\.object\(\{ player_id: z\.uuid\(\) \}\)/);
+  assert.ok(!/export (async )?function GET/.test(src), "the id must travel in the body, never in a URL");
+  assert.match(src, /cache-control": "no-store"/);
+  assert.ok(!/player_id:\s*r\.player_id/.test(src), "the response must not carry the id");
+});
+
 // ---- browser storage --------------------------------------------------------------------------------------------
 
 test("every localStorage key in the source is listed, and every listed key exists", () => {

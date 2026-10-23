@@ -1,6 +1,6 @@
 # Yomi: 60-second demo
 
-**Run it:** `cd web && npm run dev`, then open http://localhost:3000 (play) and http://localhost:3000/stats.
+**Run it:** `cd web && npm run dev`, then open http://localhost:3000 (play), /you (your attempts), /stats (what the data shows) and /learn (how Yomi learns).
 Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is needed.
 
 ## Talk track (~150 words)
@@ -10,7 +10,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 **What I built (20s).** Three parts:
 1. **Datasets:** 200k Lichess puzzles, 200k Sudoku, 711 Queens levels, combined into one table of puzzle features vs difficulty.
 2. **Prototype:** Yomi Zip, a daily path puzzle. *(Play one live.)*
-3. **Logging:** every attempt records solve time, backtracks, and the cell where the player paused longest. *(Open /stats: the heatmap shows where people get stuck.)*
+3. **Logging:** every attempt records solve time, backtracks, and the cell where the player paused longest. *(Open /stats: once a puzzle has 5+ finished solves, its heatmap shows where people get stuck.)*
 
 **Findings so far (20s).** In Lichess, solution length vs rating gives Spearman ρ = **+0.55**. That's our strongest signal, and its labels come from **real humans**. Queens (ρ = +0.84 for grid size) and Sudoku look strong too, but their labels come from **solvers**, so they measure algorithm effort, not human difficulty. That's exactly why Yomi needs its own human solve data.
 
@@ -19,10 +19,16 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 ## First run (what a new visitor sees)
 
 1. They land straight on a puzzle with a 3x3 how-to-play on top: drag 1 to 2, undo, fill every cell, dots in order. One tap on **Skip** closes it. It shows once per browser, and **Menu > How to play** reopens it.
-2. The tutorial is practice only: it sends nothing to the server, so it never creates a solve, never shows in /stats or the board, and never reaches training data.
-3. The main screen is the timer, the prediction line, the grid and Undo/Reset. Mode (Regular/Extreme), skip, stats, the board, change name, streak and the privacy note are in **Menu**.
+2. The tutorial is practice only: it sends nothing to the server, so it never creates a solve, never shows in /stats, and never reaches training data.
+3. The main screen is the timer, the prediction line, the grid and Undo/Reset. Mode (Regular/Extreme), skip, your attempts, what the data shows, how Yomi learns, change name, streak and the privacy note are in **Menu**.
 4. **What we store** (linked from the first-run screen, the footer and the menu, at `/what-we-store`) lists every field saved, why, and what is never saved (email, account, IP address, cookies, analytics). It is generated from one list that a test checks against the real migrations, API validation, browser storage keys, rate limits and logging, so it cannot drift from the code.
-5. The nickname is optional and never blocks play: after the first solve the card asks "Want your name on the board?", with **No thanks** as the main button.
+5. The nickname is optional and nothing asks for it: **Menu > Change name** sets one, and it only appears on result links you share (otherwise they say "Anon xxxx").
+
+## The learning pages
+
+- **/learn (How Yomi learns):** the four-step loop with live counts (usable solves against the 30-solve rule), what the current model is (today: solver steps, a stand-in, so no one's solving time has shaped it), the six features on puzzle 1, a bar chart of how far each feature moves the guess across the 30 puzzles, a "what it does not know yet" list, and the version table. Say out loud that the model is retrained by hand in batches and does not change while people play, and that no version has a held-out score yet.
+- **/stats (What the data shows):** heatmaps only for puzzles with 5+ finished solves. The guesses-vs-reality chart only appears for a model that predicts time, with 5+ players and 20+ first tries; today it says "nothing to compare yet". Never present an empty state as a result.
+- **/you (Your attempts):** your own attempts by board size, a replay of each path, your data as a download. Looked up by the anonymous ID in your browser. No ranking, no comparison with anyone.
 
 ## Prediction and result card (regular screen)
 
@@ -51,7 +57,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - The grid is **blurred** until you tap **Start**, so nobody can read the puzzle ahead of the clock. Pick 30 s, 1, 2 or 5 min, or a custom time from 10 seconds to 10 minutes (seconds or minutes). The choice is remembered.
 - Once started, the clock counts down (tenths and red in the last 10 s, and the background pulses faster). Solve a puzzle: it scores 1 and the next one appears right away. Same puzzles in the same order every run, smallest grids first. Menu > Skip drops the puzzle on screen without a score.
 - When time is up the puzzle in progress does not count (it is stored as unfinished), the grid freezes, and a card shows the score, a "New best" badge if it beats your best for that run length, **Play again**, **Share score** and **Back to Regular**.
-- Scores and bests live on the device only. Each solve in a run is still stored like any other (with `mode = 'extreme'`, no per-puzzle clock) and is **not used to train the model**. There is no server-side sprint board yet; the board page only has Most Unpredictable in Yomi.
+- Scores and bests live on the device only. Each solve in a run is still stored like any other (with `mode = 'extreme'`, no per-puzzle clock) and is **not used to train the model**. There is no sprint board; nobody is ranked anywhere in Yomi.
 - The old per-puzzle clock (80% of the predicted time, tightening by 5 points per win) is gone.
 
 ## Live demo screen (`/demo`)
@@ -61,7 +67,7 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 1. Top right: live counters of total solves and players, refreshed every 10 s while the tab is visible. If the database is slow or offline they keep the last numbers and say so.
 2. Before the volunteer plays: the model's read of the puzzle, in big text. While the model is the solver-effort stand-in this is solver steps and an easier/harder cue, not a time. Say that out loud.
 3. Volunteer drags from 1 through every dot. Then the card shows predicted vs actual, their own stuck cell (red dashes), and the orange heatmap of where earlier solvers got stuck on that puzzle.
-4. "Next volunteer" resets everything. Each volunteer is a fresh anonymous player, and their solves are tagged `source = 'demo'` so they can be filtered out later. They do not appear on the Most Unpredictable board.
+4. "Next volunteer" resets everything. Each volunteer is a fresh anonymous player, and their solves are tagged `source = 'demo'` so they can be filtered out later. Nothing ranks people, so that is only about keeping them separable in the data.
 5. If the Wi-Fi dies, the game still works: it needs no database to play, and solves are queued and sent later.
 
 ## Future work
@@ -71,7 +77,7 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 ## If asked
 
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.
-- *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /stats updates live.
+- *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /learn shows the live count against the 30-solve rule.
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
 - *Why would anyone come back?* A daily streak: a small 🔥 counter on the main screen (and on the result card), plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
 

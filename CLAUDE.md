@@ -39,7 +39,7 @@ Tasks (update the checkboxes as you finish them):
 
 Extras, only if everything above is done: a test that /stats totals match DB counts; a test that a 429 never drops a solve.
 
-Sprint 3 (Oct 22 to 29): personalization, the "Most Unpredictable in Yomi" leaderboard, model-tuned daily difficulty, retraining on the full data, showcase demo rehearsal.
+Sprint 3 (Oct 22 to 29): personalization, model-tuned daily difficulty, retraining on the full data, showcase demo rehearsal.
 
 ## Repo map
 
@@ -53,7 +53,7 @@ Sprint 3 (Oct 22 to 29): personalization, the "Most Unpredictable in Yomi" leade
   - `lib/stuck.ts`: server-side stuck-cell calculation.
   - `app/api/solves/route.ts`: POST, zod validation, body cap, rate limit (TODO: keyed on a client-sent id, not real abuse protection).
   - `app/api/export/route.ts`: CSV export.
-  - `app/stats/`: stats page (counts, median times, stuck heatmaps, backtracks vs time).
+  - `app/stats/` (What the data shows), `app/learn/` (How Yomi learns), `app/you/` (Your attempts): the learning pages. No leaderboard; `/board` redirects to `/learn`. Charts appear only above the display thresholds in `lib/insights.ts`.
   - `migrations/`, `scripts/migrate.mjs`: Neon schema.
 - `ml/` (Sprint 2, new): features, training, evaluation, export.
 - `DEMO.md`: showcase talk track. Keep it in sync with behavior.
