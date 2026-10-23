@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
 import { explainGap, targetCopy } from "@/lib/explain";
+import { finishKind } from "@/lib/finish";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
 import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
@@ -13,7 +14,9 @@ import { flushQueue, submitSolve } from "@/lib/submit";
 import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
 import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
+import FinishEffect, { type FinishEvent } from "./FinishEffect";
 import GameMenu from "./GameMenu";
+import PathLine from "./PathLine";
 import StreakChip from "./StreakChip";
 import NameForm from "./NameForm";
 import Tutorial from "./Tutorial";
@@ -181,6 +184,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [extremeWins, setExtremeWins] = useState(readWins);
   const [medians, setMedians] = useState<Record<string, { median_ms: number; n: number }> | null>(null);
   const [extremeWin, setExtremeWin] = useState<{ marginMs: number; limitMs: number } | null>(null);
+  const [finish, setFinish] = useState<FinishEvent | null>(null); // the spark burst over the board
   const [bgEvent, setBgEvent] = useState<BgEvent | null>(null); // a win or a timeout, for the background to react to
   const [lockedLimit, setLockedLimit] = useState<number | null>(null); // the running attempt's clock, fixed at the first move
   const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
@@ -273,19 +277,26 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   );
 
   // Extreme mode: the clock ran out. Log the attempt, reset the grid, and offer an instant Retry.
-  const timeUp = useCallback(() => {
-    const a = attempt.current;
-    if (a.t0 === null || a.limitMs === null) return;
-    dragging.current = false;
-    void send(false, a.limitMs);
-    a.path = [startCell(puzzle)];
-    setPath(a.path);
-    setElapsed(a.limitMs);
-    setStatus("timeout");
-    setBgEvent({ kind: "timeout", id: Date.now() });
-    setExtremeWins(0);
-    writeLocal(WINS_KEY, "0");
-  }, [send, puzzle]);
+  // `finishedAt` is set when the grid was completed, but after the clock: a loss that still gets a subtle spark.
+  // When the clock simply ran out there is nothing to celebrate and no effect.
+  const timeUp = useCallback(
+    (finishedAt?: Cell) => {
+      const a = attempt.current;
+      if (a.t0 === null || a.limitMs === null) return;
+      const kind = finishKind(finishedAt ? "late" : "timeout");
+      if (kind && finishedAt) setFinish({ id: Date.now(), kind, at: finishedAt });
+      dragging.current = false;
+      void send(false, a.limitMs);
+      a.path = [startCell(puzzle)];
+      setPath(a.path);
+      setElapsed(a.limitMs);
+      setStatus("timeout");
+      setBgEvent({ kind: "timeout", id: Date.now() });
+      setExtremeWins(0);
+      writeLocal(WINS_KEY, "0");
+    },
+    [send, puzzle],
+  );
 
   // Ask for the predicted stuck cells once the solve is over. Any failure just means no overlay.
   const fetchStuck = useCallback(async (id: string) => {
@@ -338,7 +349,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       if (kind === "extend" && isSolved(n, dots, next)) {
         const ms = now - a.t0;
         if (a.mode === "extreme" && a.limitMs !== null && ms > a.limitMs) {
-          timeUp(); // finished, but after the clock: not a win
+          timeUp(next[next.length - 1]); // finished, but after the clock: not a win
           return;
         }
         if (a.mode === "extreme" && a.limitMs !== null) {
@@ -351,6 +362,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         setElapsed(ms);
         setStatus("solved");
         setBgEvent({ kind: "win", id: Date.now() });
+        setFinish({ id: Date.now(), kind: finishKind("win")!, at: next[next.length - 1] });
         const { cell: stuckCell, maxPauseMs } = findStuck(a.events);
         setStuck(stuckCell);
         // Personal best per grid size and mode, on this device only. The demo screen has no "you", so no best.
@@ -468,6 +480,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setSubmit("none");
     setStuck(null);
     setSolveInfo(null);
+    setFinish(null);
     setPredStuck(null);
     setExtremeWin(null);
     setLockedLimit(null);
@@ -485,6 +498,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setSubmit("none");
     setStuck(null);
     setSolveInfo(null);
+    setFinish(null);
     setLockedLimit(null);
   }, [puzzle]);
 
@@ -536,7 +550,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           ? `no data on this puzzle yet, so ${clock(limitInfo.ms)} to start`
           : "";
 
-  const points = path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
   const onPath = new Set(path.map(([r, c]) => r * n + c));
 
   // Extreme only: how much of the clock is gone, 0 to 1. It drives the pulse and the warning colour.
@@ -646,6 +659,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         className={`relative aspect-square w-full touch-none select-none overflow-hidden rounded-xl border-2 border-foreground/80 bg-background ${status === "timeout" ? "yomi-shake" : ""}`}
         style={{ WebkitTouchCallout: "none" }}
       >
+        <FinishEffect event={finish} n={n} />
         {status === "timeout" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 p-4 text-center" data-testid="timeout">
             <p className="text-2xl font-bold">Time&apos;s up</p>
@@ -677,14 +691,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               data-heat={count}
             />
           ))}
-          <polyline
-            points={points}
-            fill="none"
-            stroke={status === "solved" ? "#16a34a" : "#f97316"}
-            strokeWidth={0.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <PathLine path={path} stroke={status === "solved" ? "#16a34a" : "#f97316"} />
           {dots.map(([r, c, v]) => (
             <g key={v}>
               <circle cx={c + 0.5} cy={r + 0.5} r={0.3} className="fill-foreground" />
@@ -748,11 +755,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             </button>
           </div>
         </div>
-      ) : status === "solved" ? (
-        <button onClick={next} className="min-h-11 w-full rounded-lg bg-foreground px-4 py-2 text-background" data-testid="next">
-          Next puzzle
-        </button>
-      ) : (
+      ) : status === "solved" ? null : (
         <div className="flex w-full gap-2 text-sm">
           <button
             onClick={undo}
@@ -877,7 +880,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               ) : (
                 <p className="flex flex-wrap items-center justify-center gap-2 text-xs" data-testid="name-prompt">
                   Want your name on the board?
-                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg bg-foreground px-4 text-background">
+                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg border-2 border-foreground px-4 font-semibold">
                     No thanks
                   </button>
                   <button onClick={() => setNameOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4">
@@ -891,6 +894,17 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               {submit === "queued" && "Couldn't reach the server just now. This solve is saved here and will be sent on your next visit."}
               {submit === "failed" && "This solve could not be logged."}
             </p>
+            {!demo && (
+              // The one primary action. Sticky, so it stays in reach however long the card is on a small phone.
+              <button
+                onClick={next}
+                autoFocus
+                className="sticky bottom-3 z-10 mt-2 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 text-lg font-semibold text-white shadow-lg"
+                data-testid="next"
+              >
+                Next puzzle
+              </button>
+            )}
           </div>
         )}
       </div>
