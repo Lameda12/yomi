@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
-import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
+import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
 import { flushQueue, submitSolve } from "@/lib/submit";
-import { isSolved, type Cell, type Dot } from "@/lib/zip";
+import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
+import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
+import GameMenu from "./GameMenu";
 import NameForm from "./NameForm";
+import Tutorial from "./Tutorial";
 
 export interface PublicPuzzle {
   id: string;
@@ -150,8 +153,13 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
 });
 
 export default function ZipGame({ puzzles, coreCount, prediction, demo = false }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null; demo?: boolean }) {
-  // First visit on this device: a start screen (nickname or skip) comes before the puzzle, once.
-  const [started, setStarted] = useState(() => demo || startDone());
+  // A new player lands on a puzzle with the tutorial on top, skippable with one tap. People who already played
+  // (a solve, or the old start screen answered) never see it unless they open "How to play".
+  const [tutorial, setTutorial] = useState(() => !demo && !tutorialSeen() && !startDone() && readList(DONE_KEY).length === 0);
+  // The optional nickname prompt on the first result card. Answered (skipped or saved) once, never blocks play.
+  const [nameAsked, setNameAsked] = useState(() => demo || startDone() || savedNickname() !== "");
+  const [nameOpen, setNameOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
   const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount, undefined, demo));
@@ -359,34 +367,11 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, limitInfo, timeUp],
   );
 
-  // Try to move the path head to `target`: undo if it is on the path already,
-  // otherwise extend one cell at a time along a straight line (fast drags skip cells).
+  // Drag the path head onto `target`: see planMove in lib/zip.ts.
   const moveTo = useCallback(
     (target: Cell) => {
-      const cur = attempt.current.path;
-      const at = cur.findIndex(([r, c]) => r === target[0] && c === target[1]);
-      if (at >= 0) {
-        if (at < cur.length - 1) commit(cur.slice(0, at + 1), "undo");
-        return;
-      }
-      const [hr, hc] = cur[cur.length - 1];
-      if (hr !== target[0] && hc !== target[1]) return; // diagonal: wait for a clear direction
-      const dr = Math.sign(target[0] - hr), dc = Math.sign(target[1] - hc);
-      const visited = new Set(cur.map(([r, c]) => r * n + c));
-      let nextLabel = 1 + cur.filter(([r, c]) => labelAt.has(r * n + c)).length;
-      const next = cur.slice();
-      let r = hr, c = hc;
-      while (r !== target[0] || c !== target[1]) {
-        r += dr;
-        c += dc;
-        const key = r * n + c;
-        const label = labelAt.get(key);
-        if (visited.has(key) || (label !== undefined && label !== nextLabel)) break;
-        if (label !== undefined) nextLabel++;
-        visited.add(key);
-        next.push([r, c]);
-      }
-      if (next.length > cur.length) commit(next, "extend");
+      const move = planMove(n, labelAt, attempt.current.path, target);
+      if (move) commit(move.path, move.kind);
     },
     [commit, labelAt, n],
   );
@@ -435,6 +420,12 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const clear = () => {
     if (status === "solved" || status === "timeout" || attempt.current.path.length <= 1) return;
     commit([startCell(puzzle)], "clear");
+  };
+
+  // The Undo button: one cell back, the same as dragging back over the path.
+  const undo = () => {
+    if (status === "solved" || status === "timeout" || attempt.current.path.length <= 1) return;
+    commit(attempt.current.path.slice(0, -1), "undo");
   };
 
   const next = () => {
@@ -509,7 +500,10 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     }
   };
 
-  if (!started) return <NameForm variant="start" onDone={() => setStarted(true)} />;
+  const closeTutorial = () => {
+    markTutorialSeen();
+    setTutorial(false);
+  };
 
   const today = new Date();
   const streak = streakState(streakDays, today);
@@ -535,38 +529,48 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   return (
     <>
     <GameBackground extreme={mode === "extreme"} urgency={urgency} event={bgEvent} />
+    {tutorial && <Tutorial onClose={closeTutorial} />}
+    {menuOpen && !demo && (
+      <GameMenu
+        onClose={() => setMenuOpen(false)}
+        puzzleLabel={`${isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · ${n}×${n}`}
+        solved={done.length}
+        streak={{ count: streak.count, atRisk: streak.atRisk }}
+        mode={mode}
+        canChangeMode={status === "idle"}
+        onMode={chooseMode}
+        skipLabel={status === "solved" ? "Next puzzle" : "Skip this puzzle"}
+        onSkip={() => {
+          setMenuOpen(false);
+          next();
+        }}
+        canHowTo={status !== "playing"}
+        onHowTo={() => {
+          setMenuOpen(false);
+          setTutorial(true);
+        }}
+      />
+    )}
     <div
-      className={demo ? "flex flex-col items-center gap-3 text-lg" : "flex w-full max-w-md flex-col items-center gap-4"}
+      className={demo ? "flex flex-col items-center gap-3 text-lg" : "flex w-full max-w-md flex-col items-center gap-3"}
       style={demo ? { width: "min(94vw, 52vh)" } : undefined}
     >
-      {!demo && streak.count > 0 && (
-        <p className="rounded-full bg-orange-500/15 px-3 py-1 font-mono text-xs text-orange-700 dark:text-orange-300">
-          🔥 {streak.count}-day streak
-        </p>
-      )}
-      <div className={`flex w-full items-baseline justify-between font-mono ${demo ? "text-lg" : "text-sm"}`}>
-        <span>
-          {isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · {n}×{n}
-        </span>
-        <span className={`tabular-nums ${demo ? "text-5xl" : "text-2xl"}`}>{clock(elapsed)}</span>
-        <span className="opacity-70">{done.length} solved</span>
-      </div>
-
-      {!demo && (
-        <div role="group" aria-label="Game mode" className="flex w-full rounded-xl border border-foreground/20 p-1" data-testid="mode-toggle">
-          {(["regular", "extreme"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => chooseMode(m)}
-              aria-pressed={mode === m}
-              disabled={status !== "idle" && mode !== m}
-              className={`min-h-11 flex-1 rounded-lg px-3 py-2 text-sm font-medium capitalize disabled:opacity-40 ${
-                mode === m ? (m === "extreme" ? "bg-orange-500 text-white" : "bg-foreground text-background") : ""
-              }`}
-            >
-              {m === "extreme" ? "Extreme ⚡" : "Regular"}
-            </button>
-          ))}
+      {demo ? (
+        <div className="flex w-full items-baseline justify-between font-mono text-lg">
+          <span>
+            {isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · {n}×{n}
+          </span>
+          <span className="text-5xl tabular-nums">{clock(elapsed)}</span>
+          <span className="opacity-70">{done.length} solved</span>
+        </div>
+      ) : (
+        <div className="flex w-full items-center justify-between">
+          <span className="font-mono text-3xl tabular-nums" aria-label="Time">
+            {clock(elapsed)}
+          </span>
+          <button onClick={() => setMenuOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4 py-2 text-sm" data-testid="menu-button">
+            Menu
+          </button>
         </div>
       )}
 
@@ -703,33 +707,49 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         </svg>
       </div>
 
-      <div className="flex w-full items-center justify-between text-sm">
-        <span className="font-mono opacity-70">backtracks: {backtracks}</span>
-        <div className="flex gap-2">
+      {demo ? (
+        <div className="flex w-full items-center justify-between text-sm">
+          <span className="font-mono opacity-70">backtracks: {backtracks}</span>
+          <div className="flex gap-2">
+            <button
+              onClick={clear}
+              disabled={status === "solved" || status === "timeout" || path.length <= 1}
+              className="min-h-14 rounded-lg border border-foreground/30 px-4 py-2 text-lg disabled:opacity-30"
+            >
+              Clear
+            </button>
+            <button onClick={next} className="min-h-14 rounded-lg bg-foreground px-4 py-2 text-lg text-background">
+              {status === "solved" ? "Next volunteer" : "Skip"}
+            </button>
+          </div>
+        </div>
+      ) : status === "solved" ? (
+        <button onClick={next} className="min-h-11 w-full rounded-lg bg-foreground px-4 py-2 text-background" data-testid="next">
+          Next puzzle
+        </button>
+      ) : (
+        <div className="flex w-full gap-2 text-sm">
+          <button
+            onClick={undo}
+            disabled={status === "timeout" || path.length <= 1}
+            className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
+            data-testid="undo"
+          >
+            Undo
+          </button>
           <button
             onClick={clear}
-            disabled={status === "solved" || status === "timeout" || path.length <= 1}
-            className={`rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30 ${demo ? "min-h-14 text-lg" : "min-h-11"}`}
+            disabled={status === "timeout" || path.length <= 1}
+            className="min-h-11 flex-1 rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30"
+            data-testid="reset"
           >
-            Clear
-          </button>
-          <button onClick={next} className={`rounded-lg bg-foreground px-4 py-2 text-background ${demo ? "min-h-14 text-lg" : "min-h-11"}`}>
-            {status === "solved" ? (demo ? "Next volunteer" : "Next puzzle") : "Skip"}
+            Reset
           </button>
         </div>
-      </div>
+      )}
 
-      <div className={`w-full text-center ${demo ? "min-h-20 text-lg" : "min-h-24 text-sm"}`} aria-live="polite">
-        {status === "idle" && (
-          <div className="flex flex-col gap-1">
-            <p>Start at 1. Connect the dots in order and fill every cell.{mode === "extreme" && " The clock starts on your first move."}</p>
-            {!demo && streak.atRisk && (
-              <p className="text-orange-600">
-                Solve one today to keep your {streak.count}-day streak 🔥
-              </p>
-            )}
-          </div>
-        )}
+      <div className={`w-full text-center ${demo ? "min-h-20 text-lg" : "text-sm"}`} aria-live="polite">
+        {demo && status === "idle" && <p>Start at 1. Connect the dots in order and fill every cell.</p>}
         {status === "solved" && (
           <div className="flex flex-col items-center gap-2">
             {extremeWin && (
@@ -794,6 +814,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               </p>
             </div>
             </>)}
+            {!demo && !nameAsked &&
+              (nameOpen ? (
+                <NameForm variant="start" onDone={() => setNameAsked(true)} />
+              ) : (
+                <p className="flex flex-wrap items-center justify-center gap-2 text-xs" data-testid="name-prompt">
+                  Want your name on the board?
+                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg bg-foreground px-4 text-background">
+                    No thanks
+                  </button>
+                  <button onClick={() => setNameOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4">
+                    Add nickname
+                  </button>
+                </p>
+              ))}
             <p className="text-xs opacity-70">
               {submit === "sending" && "Saving…"}
               {submit === "saved" && "Solve logged. Thank you."}

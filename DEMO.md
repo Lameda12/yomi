@@ -16,6 +16,13 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 **Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show a prediction before each puzzle. Today it is the solver-effort stand-in, so the game says "how hard it'll be" in solver steps, not a time. It switches to "predicted: 42s, can you beat it?" once the human-time model has 30+ real solves.
 
+## First run (what a new visitor sees)
+
+1. They land straight on a puzzle with a 3x3 how-to-play on top: drag 1 to 2, undo, fill every cell, dots in order. One tap on **Skip** closes it. It shows once per browser, and **Menu > How to play** reopens it.
+2. The tutorial is practice only: it sends nothing to the server, so it never creates a solve, never shows in /stats or the board, and never reaches training data.
+3. The main screen is the timer, the prediction line, the grid and Undo/Reset. Mode (Regular/Extreme), skip, stats, the board, change name, streak and the privacy note are in **Menu**.
+4. The nickname is optional and never blocks play: after the first solve the card asks "Want your name on the board?", with **No thanks** as the main button.
+
 ## Live demo screen (`/demo`)
 
 Open `/demo` on the projector (1080p fits a whole round; at 720p the result text scrolls a little).
@@ -35,4 +42,4 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.
 - *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /stats updates live.
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
-- *Why would anyone come back?* A daily streak: a 🔥 chip, plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
+- *Why would anyone come back?* A daily streak: a 🔥 line in the menu, plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
