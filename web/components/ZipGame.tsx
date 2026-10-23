@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findStuck, type GameEvent } from "@/lib/stuck";
+import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
 import { flushQueue, submitSolve } from "@/lib/submit";
 import { isSolved, type Cell, type Dot } from "@/lib/zip";
+import NameForm from "./NameForm";
 
 export interface PublicPuzzle {
   id: string;
@@ -21,7 +23,6 @@ const MIN_LOG_MS = 1_000; // the API rejects anything outside 1 s .. 30 min
 const MAX_LOG_MS = 30 * 60_000;
 const DONE_KEY = "yomi_done"; // solved puzzle ids
 const SEEN_KEY = "yomi_seen"; // solved or skipped, drives which puzzle comes next
-const PLAYER_KEY = "yomi_player";
 const ZIP_BEFORE_KEY = "yomi_zip_before";
 const STREAK_KEY = "yomi_streak_days"; // local calendar days with at least one solve
 
@@ -40,19 +41,6 @@ function addToList(key: string, id: string): string[] {
     localStorage.setItem(key, JSON.stringify(next));
   } catch {}
   return next;
-}
-
-function playerId(): string {
-  try {
-    let id = localStorage.getItem(PLAYER_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(PLAYER_KEY, id);
-    }
-    return id;
-  } catch {
-    return crypto.randomUUID();
-  }
 }
 
 function readZipBefore(): boolean | null {
@@ -123,7 +111,8 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
 });
 
 export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null }) {
-  const [zipBefore, setZipBefore] = useState<boolean | null>(readZipBefore);
+  // First visit on this device: a start screen (nickname or skip) comes before the puzzle, once.
+  const [started, setStarted] = useState(startDone);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
   const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => pickPuzzle(puzzles, coreCount));
@@ -145,7 +134,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
   const predicted = useMemo(() => {
     const z = prediction?.logByPuzzle[puzzle.id];
     if (!prediction || z === undefined) return null;
-    const value = timeValue(z, prediction.players, playerId());
+    const value = timeValue(z, prediction.players, getPlayerId());
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: prediction.label === "human_time" ? ("ms" as const) : ("solver_steps" as const), version: prediction.version };
   }, [prediction, puzzle.id]);
@@ -158,6 +147,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
   // Resend solves that could not be saved on an earlier visit.
   useEffect(() => {
     void flushQueue();
+    void retryPendingNickname(); // a nickname that could not be saved last time
   }, []);
 
   useEffect(() => {
@@ -180,7 +170,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
       if (completed) setSubmit("sending");
       const result = await submitSolve({
         solve_id: a.solveId,
-        player_id: playerId(),
+        player_id: getPlayerId(),
         puzzle_id: puzzle.id,
         grid_size: puzzle.n,
         device: a.device,
@@ -337,13 +327,6 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
     setCopied(false);
   };
 
-  const answerZipBefore = (yes: boolean) => {
-    try {
-      localStorage.setItem(ZIP_BEFORE_KEY, yes ? "yes" : "no");
-    } catch {}
-    setZipBefore(yes);
-  };
-
   const shareLine = `Yomi #${number}: ${clock(elapsed)}, ${backtracks} backtrack${backtracks === 1 ? "" : "s"}`;
   const copyShare = async () => {
     try {
@@ -354,22 +337,7 @@ export default function ZipGame({ puzzles, coreCount, prediction }: { puzzles: P
     }
   };
 
-  if (zipBefore === null) {
-    return (
-      <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-2xl border border-foreground/20 p-6 text-center">
-        <p className="text-lg font-semibold">One quick question first</p>
-        <p className="text-sm opacity-70">Have you played a Zip-style path puzzle before?</p>
-        <div className="flex gap-3">
-          <button onClick={() => answerZipBefore(true)} className="rounded-lg bg-foreground px-6 py-2 text-background">
-            Yes
-          </button>
-          <button onClick={() => answerZipBefore(false)} className="rounded-lg border border-foreground/30 px-6 py-2">
-            No, first time
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!started) return <NameForm variant="start" onDone={() => setStarted(true)} />;
 
   const today = new Date();
   const streak = streakState(streakDays, today);

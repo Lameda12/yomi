@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ChangeName from "@/components/ChangeName";
 import GameLoader from "@/components/GameLoader";
 import { loadTimeInfo } from "@/lib/model";
 import { CORE_IDS, PUZZLES } from "@/lib/puzzles";
@@ -19,8 +20,15 @@ export default function Home() {
         Solves are logged anonymously (time and moves, no personal data) for a student ML project.{" "}
         <Link href="/stats" className="underline">
           See the stats
+        </Link>{" "}
+        ·{" "}
+        <Link href="/board" className="underline">
+          Most Unpredictable board
         </Link>
         .
+        <div>
+          <ChangeName />
+        </div>
       </footer>
     </main>
   );
