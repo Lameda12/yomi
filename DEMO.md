@@ -29,6 +29,13 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - **After the solve** one template line explains the gap, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the model is still learning from real players.
 - **Personal best** per grid size and mode (Regular and Extreme are separate), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size and mode just shows the time to beat. The demo screen has no personal best.
 
+## The finish (regular screen)
+
+- The path draws smoothly: the line grows to each new cell and eases back when you undo or reset.
+- Finishing a grid fires a short spark burst (under a second) from the last cell, and the line turns green. Finishing an Extreme grid after the clock gives a subtler version. If the clock simply runs out there is no effect, just the Time's up card.
+- **Next puzzle** is the one orange button on the result card. It stays pinned to the bottom of the screen and has focus, so Enter works on a keyboard.
+- With `prefers-reduced-motion` the path snaps and there is no spark effect.
+
 ## Live demo screen (`/demo`)
 
 Open `/demo` on the projector (1080p fits a whole round; at 720p the result text scrolls a little).
@@ -49,3 +56,10 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 - *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /stats updates live.
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
 - *Why would anyone come back?* A daily streak: a small 🔥 counter on the main screen (and on the result card), plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
+
+## Next
+
+Ideas, not built:
+- Show the player's best for this size and mode before the solve ("Your best: 0:30"), next to the target.
+- A vibration tick on finish for phones that support it.
+- A share card image instead of the text line.
