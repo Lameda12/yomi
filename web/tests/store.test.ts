@@ -12,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "yomi-store-"));
 const file = path.join(dir, "solves.jsonl");
 delete process.env.DATABASE_URL;
 process.env.SOLVES_JSONL = file;
-const { allSolves, insertSolve } = await import("../lib/store.ts");
+const { allSolves, getNicknames, insertSolve, predictedSolves, savePlayer, solveTotals } = await import("../lib/store.ts");
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const solve = (solve_id: string) => ({
@@ -66,4 +66,47 @@ test("prediction fields are stored with the solve, and older solves without them
   await insertSolve(solve(without));
   const plain = (await allSolves()).find((r) => r.solve_id === without)!;
   assert.equal(plain.pred_value ?? null, null);
+});
+
+test("predictedSolves only returns completed solves with a millisecond prediction and no import tag", async () => {
+  const keep = randomUUID();
+  await insertSolve({ ...solve(keep), pred_value: 9000, pred_unit: "ms", model_version: "t" });
+  await insertSolve({ ...solve(randomUUID()), pred_value: 70, pred_unit: "solver_steps", model_version: "t" }); // not a time
+  await insertSolve({ ...solve(randomUUID()), completed: false, pred_value: 9000, pred_unit: "ms", model_version: "t" }); // skipped puzzle
+  await insertSolve({ ...solve(randomUUID()), pred_value: 9000, pred_unit: "ms", model_version: "t", source: "local_import" });
+  await insertSolve(solve(randomUUID())); // no prediction at all
+  const got = await predictedSolves();
+  assert.equal(got.length, 1);
+  assert.deepEqual([got[0].solve_ms, got[0].pred_value], [2000, 9000]);
+  const row = (await allSolves()).find((r) => r.solve_id === keep)!;
+  assert.equal(got[0].player_id, row.player_id);
+});
+
+test("solveTotals counts completed solves and distinct players", async () => {
+  const all = await allSolves();
+  const t = await solveTotals();
+  assert.equal(t.solves, all.filter((r) => r.completed).length);
+  assert.equal(t.players, new Set(all.map((r) => r.player_id)).size);
+});
+
+test("players: save, unique case-insensitively, per-player cooldown, clear back to anonymous", async () => {
+  const a = randomUUID(), b = randomUUID(), c = randomUUID();
+  assert.equal((await getNicknames([a, b])).size, 0);
+  assert.equal(await savePlayer(a, "Pathfinder"), "ok");
+  assert.equal(await savePlayer(b, "pathFINDER"), "taken"); // same name, different case
+  assert.equal(await savePlayer(b, "Zig"), "ok");
+  assert.equal(await savePlayer(a, "Pathfinder 2"), "cooldown"); // a wrote a moment ago
+  assert.equal(await savePlayer(a, "Pathfinder"), "cooldown"); // same-name resave is limited too
+  const got = await getNicknames([a, b, c]);
+  assert.deepEqual([got.get(a), got.get(b), got.has(c), got.size], ["Pathfinder", "Zig", false, 2]);
+  assert.equal(await savePlayer(b, null), "ok"); // clearing is never blocked: back to anonymous
+  assert.equal((await getNicknames([a, b])).has(b), false);
+  assert.equal(await savePlayer(c, "Zig"), "ok"); // the freed name is available again
+  assert.equal((await getNicknames([])).size, 0);
+});
+
+test("players: only 60 brand-new nicknames per minute overall", async () => {
+  let busy = 0;
+  for (let i = 0; i < 70; i++) if ((await savePlayer(randomUUID(), `Fresh ${i}`)) === "busy") busy++;
+  assert.ok(busy >= 8, `expected the cap to kick in, got ${busy} refusals`); // 3 players already exist from the test above
 });

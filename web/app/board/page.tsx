@@ -1,0 +1,27 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import Leaderboard from "@/components/Leaderboard";
+
+export const metadata: Metadata = {
+  title: "Most Unpredictable at Dal · Yomi",
+  description: "Who does Yomi get most wrong? Ranked by how far its time guess is from yours.",
+};
+
+export default function BoardPage() {
+  return (
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-4 py-8">
+      <header className="flex flex-col gap-1">
+        <div className="flex items-baseline justify-between gap-4">
+          <h1 className="text-2xl font-bold tracking-tight">
+            Most Unpredictable <span className="text-orange-500">at Dal</span>
+          </h1>
+          <Link href="/" className="text-sm opacity-60 hover:opacity-100">
+            ← play
+          </Link>
+        </div>
+        <p className="text-sm opacity-70">Who does Yomi get most wrong? Biggest gap between its time guess and yours wins.</p>
+      </header>
+      <Leaderboard />
+    </main>
+  );
+}
