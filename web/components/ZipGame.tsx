@@ -627,8 +627,9 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           <div className="flex items-center gap-3">
             {mode === "extreme" ? (
               <>
+                {/* No animation on this text: iOS Safari leaves a stale paint behind text that changes every 100 ms inside an animated layer. */}
                 <span
-                  className={`font-mono text-3xl tabular-nums ${run?.phase === "running" && remainingMs < 10_000 ? "text-rose-600 motion-safe:animate-pulse" : ""}`}
+                  className={`font-mono text-3xl tabular-nums ${run?.phase === "running" && remainingMs < 10_000 ? "text-rose-600" : ""}`}
                   aria-label="Time left"
                   data-testid="sprint-clock"
                 >
@@ -737,6 +738,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
           {dots.map(([r, c, v]) => (
             <g key={v}>
               <circle cx={c + 0.5} cy={r + 0.5} r={0.3} className="fill-foreground" />
+              {/* dy, not dominant-baseline: Safari ignores dominant-baseline and draws the digits too high in the dot */}
               <text
                 x={c + 0.5}
                 y={r + 0.5}
@@ -744,7 +746,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                 fontWeight={700}
                 className="fill-background"
                 textAnchor="middle"
-                dominantBaseline="central"
+                dy=".35em"
               >
                 {v}
               </text>

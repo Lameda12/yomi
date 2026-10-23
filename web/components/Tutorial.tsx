@@ -104,7 +104,8 @@ export default function Tutorial({ onClose }: { onClose: () => void }) {
               <g key={v}>
                 {v === hint && <circle cx={c + 0.5} cy={r + 0.5} r={0.42} fill="none" stroke="#f97316" strokeWidth={0.07} className="motion-safe:animate-pulse" />}
                 <circle cx={c + 0.5} cy={r + 0.5} r={0.3} className="fill-foreground" />
-                <text x={c + 0.5} y={r + 0.5} fontSize={0.32} fontWeight={700} className="fill-background" textAnchor="middle" dominantBaseline="central">
+                {/* dy, not dominant-baseline: Safari ignores dominant-baseline and draws the digits too high in the dot */}
+                <text x={c + 0.5} y={r + 0.5} fontSize={0.32} fontWeight={700} className="fill-background" textAnchor="middle" dy=".35em">
                   {v}
                 </text>
               </g>
