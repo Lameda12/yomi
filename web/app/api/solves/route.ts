@@ -28,7 +28,7 @@ const Body = z.object({
   // prediction), so it is only range-checked here; see the TODO about it counting for the Extreme board.
   mode: z.enum(["regular", "extreme"]).default("regular"),
   extreme_limit_ms: int(MIN_LIMIT_MS, MAX_LIMIT_MS).nullable().optional(),
-  // Only the /demo presenter screen sets this, so volunteer solves can be told apart (and left out of the board).
+  // Only the /demo presenter screen sets this, so volunteer solves can be told apart (and filtered out later).
   source: z.literal("demo").optional(),
   // What the page predicted before the solve. Optional: no model, or an older client.
   prediction: z

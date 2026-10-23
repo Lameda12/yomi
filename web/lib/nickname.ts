@@ -1,4 +1,4 @@
-// Optional leaderboard nicknames. Pure functions, no storage. Anonymous is the default: a player with no
+// Optional nicknames for shared result links. Pure functions, no storage. Anonymous is the default: a player with no
 // nickname shows as "Anon xxxx". No real names are asked for or checked.
 //
 // The profanity filter is basic on purpose. It catches common words, spaced-out and leetspeak spellings,

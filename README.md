@@ -6,7 +6,7 @@
 
 **Yomi is a daily path puzzle that guesses how you'll do before you play.**
 
-Connect the numbered dots with one line. Before you start, Yomi predicts your time. Then you try to beat the prediction. When you finish, the result card shows predicted vs actual, plus the 3 cells it expected you to get stuck on (revealed only after the solve, never before). The model learns from every solve.
+Connect the numbered dots with one line. Before you start, Yomi predicts your time. Then you try to beat the prediction. When you finish, the result card shows predicted vs actual, plus the 3 cells it expected you to get stuck on (revealed only after the solve, never before). Every solve is stored, and the model is retrained by hand, in batches, on the stored solves. It does not update while you play.
 
 Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 2026**.
 
@@ -31,7 +31,7 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 - **Data quality:** dedupe by client `solve_id` (unique constraint + `ON CONFLICT DO NOTHING`). `solve_ms`, `backtracks`, `stuck_cell`, and `completed` are computed on the server, and the client's values are ignored. Tests included.
 - **Deploy:** live on Vercel with Neon Postgres, migrations applied. One real solve on the live URL landed in Neon with the server-derived fields, then was deleted. Next.js upgraded to 16.4.2 for a critical advisory.
 - **Prediction UI:** before each solve the game shows Yomi's read of the puzzle (solver steps and an easier/harder cue while the label is `solver_effort`, a time once there is a human-time model). The result card shows predicted vs actual. The prediction is saved with the solve (migration 003). If `model.json` is missing or invalid, the game just runs without predictions. `lib/predict.ts` matches the Python test vectors within 1e-6.
-- **Start screen, leaderboard, demo, Extreme:** a new visitor lands on a puzzle with a skippable 3x3 tutorial (practice only: it sends nothing and creates no solve). The nickname is optional and asked once after the first solve, with Skip as the main button. `/board` has the live "Most Unpredictable" board, ranked against the crowd's typical time per puzzle while the model predicts solver steps, and against Yomi's time guess automatically once `model.json` is `human_time`. It opens at 3 players x 3 solves. `/demo` is a projector screen with live counters and a stuck heatmap. **Extreme** is a sprint: the grid is blurred until you tap Start, then you solve as many puzzles as you can before the clock runs out (60 s by default, or any time from 10 s to 10 min). Same puzzles in the same order every run; the score and your best per run length stay on the device. Sprint solves are stored as `mode = 'extreme'` and are not used for training.
+- **Start screen, learning pages, demo, Extreme:** a new visitor lands on a puzzle with a skippable 3x3 tutorial (practice only: it sends nothing and creates no solve). There is no leaderboard: the people-ranking board was retired, and `/board` redirects to `/learn`. **`/learn` (How Yomi learns)** explains the loop (play, collect, retrain by hand, check), the six features on a drawing of a real puzzle, what the model leans on, what it does not know, and a version history from `web/public/model_history.json`. **`/stats` (What the data shows)** has stuck-cell heatmaps for puzzles with 5+ finished solves and, only on a model that predicts time and with 5+ players and 20+ first tries, the model's guesses against what happened next to an always-guess-the-typical-time baseline; otherwise it says what is missing. **`/you` (Your attempts)** shows your own attempts by board size with a replay of each path and a download of your data. The nickname is optional and only appears on shared result links. `/demo` is a projector screen with live counters and a stuck heatmap. **Extreme** is a sprint: the grid is blurred until you tap Start, then you solve as many puzzles as you can before the clock runs out (60 s by default, or any time from 10 s to 10 min). Same puzzles in the same order every run; the score and your best per run length stay on the device. Sprint solves are stored as `mode = 'extreme'` and are not used for training.
 - **Features:** `ml/features.py` builds puzzle and cell features. 11 tests pass.
 - **Solve-time model:** ridge model fitted on solver effort as a stand-in. Human-time path is written but not yet run on real data, so this task is unticked.
 - **Test rows:** the 8 early test solves are excluded from training by row id (kept in the data, not deleted).
@@ -46,8 +46,8 @@ Built for the ShiftKey Build It! ML project (Dalhousie). Showcase: **Oct 29, 202
 2. **Result card:** add a "beat the bot" rematch button (predicted vs actual is already there).
 3. **Stuck-point highlights:** show the 3 predicted cells on the result card only, after the solve ends. Never before.
 4. **Stuck cells on the result card:** wired (`/api/stuck`, after the solve only) but empty until the stuck model is fitted on 30+ real solves.
-5. **Stats page:** totals that match the database (extra test).
-6. **Sprint 3 (Oct 22 to 29):** personalization, "Most Unpredictable in Yomi" leaderboard, model-tuned daily difficulty, retrain on the full data, showcase rehearsal.
+5. **Retrain when there is data:** `python -m ml.pipeline --source neon` appends to `web/public/model_history.json` and keeps the run's report in `reports/history/`.
+6. **Sprint 3 (Oct 22 to 29):** personalization, model-tuned daily difficulty, retrain on the full data, showcase rehearsal.
 
 ## Run it locally
 

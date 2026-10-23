@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/": ["./public/model.json"],
     "/api/stuck": ["./public/model.json"],
+    "/learn": ["./public/model.json", "./public/model_history.json"],
+    "/stats": ["./public/model.json"],
   },
   turbopack: {
     rules: {

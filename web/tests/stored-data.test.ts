@@ -68,6 +68,14 @@ test("the players API accepts exactly the fields the page lists", () => {
   assert.deepEqual([...line.matchAll(/(\w+): z\./g)].map((m) => m[1]).sort(), [...API_PLAYER_FIELDS].sort());
 });
 
+test("the Your attempts API takes only the anonymous id, is POST-only, and never echoes it", () => {
+  const src = read("app/api/me/route.ts");
+  assert.match(src, /const Body = z\.object\(\{ player_id: z\.uuid\(\) \}\)/);
+  assert.ok(!/export (async )?function GET/.test(src), "the id must travel in the body, never in a URL");
+  assert.match(src, /cache-control": "no-store"/);
+  assert.ok(!/player_id:\s*r\.player_id/.test(src), "the response must not carry the id");
+});
+
 // ---- browser storage --------------------------------------------------------------------------------------------
 
 test("every localStorage key in the source is listed, and every listed key exists", () => {
@@ -164,8 +172,11 @@ test("plain English: no empty text, no em dashes", () => {
   }
 });
 
-test("the page says what the data trains and ranks", () => {
+test("the page says what the data trains, that training is manual, and that nobody is ranked", () => {
   const uses = USES.join(" ");
   assert.match(uses, /train the model/);
-  assert.match(uses, /leaderboard/);
+  assert.match(uses, /manual batch job/);
+  assert.match(uses, /does not change while you play/);
+  const all = [...SOLVES.flatMap((i) => [i.what, i.why]), ...PLAYERS.flatMap((i) => [i.what, i.why]), ...USES, ...LIMITS, ...NOT_STORED.map((n) => n.detail)].join(" ");
+  assert.doesNotMatch(all, /leaderboard|Most Unpredictable|\brank/i, "there is no ranking of people any more");
 });

@@ -12,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "yomi-store-"));
 const file = path.join(dir, "solves.jsonl");
 delete process.env.DATABASE_URL;
 process.env.SOLVES_JSONL = file;
-const { allSolves, crowdSolves, dropSnapshot, extremeWins, puzzleMedians, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
+const { allSolves, dropTotals, puzzleMedians, getNicknames, insertSolve, totalsSnapshot, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const solve = (solve_id: string) => ({
@@ -68,20 +68,6 @@ test("prediction fields are stored with the solve, and older solves without them
   assert.equal(plain.pred_value ?? null, null);
 });
 
-test("predictedSolves only returns completed solves with a millisecond prediction and no import tag", async () => {
-  const keep = randomUUID();
-  await insertSolve({ ...solve(keep), pred_value: 9000, pred_unit: "ms", model_version: "t" });
-  await insertSolve({ ...solve(randomUUID()), pred_value: 70, pred_unit: "solver_steps", model_version: "t" }); // not a time
-  await insertSolve({ ...solve(randomUUID()), completed: false, pred_value: 9000, pred_unit: "ms", model_version: "t" }); // skipped puzzle
-  await insertSolve({ ...solve(randomUUID()), pred_value: 9000, pred_unit: "ms", model_version: "t", source: "local_import" });
-  await insertSolve(solve(randomUUID())); // no prediction at all
-  const got = await predictedSolves();
-  assert.equal(got.length, 1);
-  assert.deepEqual([got[0].solve_ms, got[0].pred_value], [2000, 9000]);
-  const row = (await allSolves()).find((r) => r.solve_id === keep)!;
-  assert.equal(got[0].player_id, row.player_id);
-});
-
 test("solveTotals counts completed solves and distinct players", async () => {
   const all = await allSolves();
   const t = await solveTotals();
@@ -105,19 +91,16 @@ test("players: save, unique case-insensitively, per-player cooldown, clear back 
   assert.equal((await getNicknames([])).size, 0);
 });
 
-test("leaderboardSnapshot is shared for a few seconds and refreshed by a nickname change", async () => {
-  dropSnapshot();
-  const player = randomUUID();
-  const before = await leaderboardSnapshot();
-  assert.equal(await leaderboardSnapshot(), before, "second call inside 5 s returns the very same snapshot");
-  const concurrent = await Promise.all([leaderboardSnapshot(), leaderboardSnapshot()]);
+test("totalsSnapshot is shared for a few seconds, then reads fresh numbers", async () => {
+  dropTotals();
+  const before = await totalsSnapshot();
+  assert.equal(await totalsSnapshot(), before, "second call inside 5 s returns the very same numbers");
+  const concurrent = await Promise.all([totalsSnapshot(), totalsSnapshot()]);
   assert.equal(concurrent[0], concurrent[1]);
-  await insertSolve({ ...solve(randomUUID()), player_id: player, pred_value: 5000, pred_unit: "ms", model_version: "t" });
-  assert.equal((await leaderboardSnapshot()).solves.length, before.solves.length, "new solves wait for the cache to expire");
-  assert.equal(await savePlayer(player, "Snapshot Sam"), "ok");
-  const fresh = await leaderboardSnapshot(); // the nickname write dropped the cache
-  assert.equal(fresh.names.get(player), "Snapshot Sam");
-  assert.equal(fresh.solves.length, before.solves.length + 1);
+  await insertSolve(solve(randomUUID()));
+  assert.equal((await totalsSnapshot()).solves, before.solves, "a new solve waits for the cache to expire");
+  dropTotals();
+  assert.equal((await totalsSnapshot()).solves, before.solves + 1);
 });
 
 test("stuckHeat counts where completed solves of one puzzle got stuck, and nothing else", async () => {
@@ -148,21 +131,6 @@ test("mode and the extreme clock are stored; older rows without them count as re
   assert.equal((await allSolves()).find((r) => r.solve_id === plain)!.mode ?? "regular", "regular");
 });
 
-test("extremeWins: only completed extreme solves that beat their clock, live-site only", async () => {
-  const before = (await extremeWins()).length;
-  const win = randomUUID();
-  await insertSolve({ ...solve(win), solve_ms: 12_000, mode: "extreme", extreme_limit_ms: 20_000 }); // margin 8 s
-  await insertSolve({ ...solve(randomUUID()), solve_ms: 25_000, mode: "extreme", extreme_limit_ms: 20_000 }); // over the clock
-  await insertSolve({ ...solve(randomUUID()), completed: false, mode: "extreme", extreme_limit_ms: 20_000 }); // timed out
-  await insertSolve({ ...solve(randomUUID()), mode: "extreme", extreme_limit_ms: null }); // no clock recorded
-  await insertSolve({ ...solve(randomUUID()), mode: "regular", extreme_limit_ms: 20_000 }); // regular never counts
-  await insertSolve({ ...solve(randomUUID()), solve_ms: 1_000, mode: "extreme", extreme_limit_ms: 20_000, source: "demo" });
-  const wins = await extremeWins();
-  assert.equal(wins.length, before + 1);
-  const row = (await allSolves()).find((r) => r.solve_id === win)!;
-  assert.deepEqual(wins.find((w) => w.player_id === row.player_id), { player_id: row.player_id, margin_ms: 8_000 });
-});
-
 test("puzzleMedians: regular completed solves only, and only with 3+ solves", async () => {
   const mk = (puzzle_id: string, solve_ms: number, extra: object = {}) => ({ ...solve(randomUUID()), puzzle_id, solve_ms, ...extra });
   for (const ms of [10_000, 30_000, 20_000]) await insertSolve(mk("zip-median-a", ms));
@@ -174,18 +142,6 @@ test("puzzleMedians: regular completed solves only, and only with 3+ solves", as
   assert.equal(m["zip-median-b"], undefined);
 });
 
-test("crowdSolves: completed regular solves, without demo volunteers or extreme runs", async () => {
-  const puzzle = "zip-crowd-q";
-  const mk = (extra: object) => ({ ...solve(randomUUID()), puzzle_id: puzzle, solve_ms: 7_000, ...extra });
-  await insertSolve(mk({}));
-  await insertSolve(mk({ source: "local_import" })); // real play copied in earlier: counts
-  await insertSolve(mk({ source: "demo" })); // projector volunteer: no
-  await insertSolve(mk({ mode: "extreme", extreme_limit_ms: 9_000 })); // played against a clock: no
-  await insertSolve(mk({ completed: false })); // skipped: no
-  const got = (await crowdSolves()).filter((r) => r.puzzle_id === puzzle);
-  assert.equal(got.length, 2);
-  assert.ok(got.every((r) => r.solve_ms === 7_000));
-});
 
 test("players: only 60 brand-new nicknames per minute overall", async () => {
   let busy = 0;

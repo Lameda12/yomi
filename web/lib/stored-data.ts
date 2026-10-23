@@ -26,13 +26,13 @@ export const GROUPS: { id: Group; title: string }[] = [
 
 // One row per attempt, solved or given up (table `solves`).
 export const SOLVES: StoredItem[] = [
-  { column: "player_id", group: "you", origin: "sent", what: "A random ID your browser made up for itself. It is not your name and not tied to any account.", why: "Groups your solves together so the model can learn how you compare, and so the leaderboard can rank you." },
+  { column: "player_id", group: "you", origin: "sent", what: "A random ID your browser made up for itself. It is not your name and not tied to any account.", why: "Groups your solves together, so you can see your own attempts and so the model can later learn how players differ." },
   { column: "solve_id", group: "you", origin: "sent", what: "A random ID for this one attempt.", why: "Stops a retried upload from being saved twice, and it is the ID in a shared result link." },
   { column: "puzzle_id", group: "puzzle", origin: "sent", what: "Which puzzle you played.", why: "To see how hard each puzzle really is for people." },
   { column: "grid_size", group: "puzzle", origin: "sent", what: "The grid size (5, 6 or 7).", why: "Bigger grids take longer; the model needs to know." },
   { column: "n_dots", group: "puzzle", origin: "derived", what: "How many numbered dots that puzzle has. Looked up from the puzzle, not from you.", why: "A feature the model uses to guess difficulty." },
   { column: "events", group: "play", origin: "sent", what: "Your path as you drew it. For every change: the time since your first move, the grid cell your finger or mouse was on, and the path length. Nothing else about your screen.", why: "The server works out your solve time, backtracks and pauses from this, and uses it to check a solve is real." },
-  { column: "solve_ms", group: "play", origin: "derived", what: "How long the attempt took, worked out on the server from your moves (never taken from your phone).", why: "This is what the model learns to predict." },
+  { column: "solve_ms", group: "play", origin: "derived", what: "How long the attempt took, worked out on the server from your moves (never taken from your phone).", why: "This is what the model is meant to predict once it has been retrained on enough real solves." },
   { column: "completed", group: "play", origin: "derived", what: "Whether you finished the grid or gave up.", why: "Only finished solves count as training data." },
   { column: "backtracks", group: "play", origin: "derived", what: "How many times you undid part of your path.", why: "Shows where a puzzle trips people up." },
   { column: "max_pause_ms", group: "play", origin: "derived", what: "Your longest pause between two moves.", why: "Used to find the spot where you got stuck." },
@@ -41,20 +41,20 @@ export const SOLVES: StoredItem[] = [
   { column: "started_at_ms", group: "play", origin: "sent", what: "The clock time of your first move (milliseconds since 1970). This reveals roughly when you played.", why: "Used with your solve time to work out when the attempt ended." },
   { column: "ended_at_ms", group: "play", origin: "derived", what: "When the attempt ended: your first-move time plus the solve time the server worked out.", why: "Completes the record of the attempt." },
   { column: "mode", group: "play", origin: "sent", what: "regular or extreme (the sprint).", why: "Extreme runs are kept separate and are not used to train the model." },
-  { column: "pred_value", group: "guess", origin: "sent", what: "The number Yomi predicted before you played.", why: "Ranks the Most Unpredictable in Yomi board: how far off the guess was. Not used to train the model." },
+  { column: "pred_value", group: "guess", origin: "sent", what: "The number Yomi predicted before you played.", why: "Lets you and the stats pages compare the guess with what happened. Not used to train the model." },
   { column: "pred_unit", group: "guess", origin: "sent", what: "Whether that number is a time or a count of solver steps (the model is still on solver steps).", why: "So a step count is never mistaken for a time." },
   { column: "model_version", group: "guess", origin: "sent", what: "Which version of the model made the guess.", why: "To compare model versions fairly." },
   { column: "id", group: "extra", origin: "server", what: "A row number.", why: "Keeps rows in order." },
   { column: "created_at", group: "extra", origin: "server", what: "The date and time the server saved the row.", why: "Used for the hourly limit on saved solves and for stats over time." },
   { column: "played_zip_before", group: "extra", origin: "sent", what: "Whether you have played a similar puzzle before. The game does not ask this right now, so it is empty.", why: "Reserved for checking whether experience changes solve times." },
-  { column: "source", group: "extra", origin: "sent", what: "Marks special rows: demo for the presenter screen's volunteers, local_import for the owner's own early test solves. Empty for normal play.", why: "So those rows can be told apart. The leaderboard leaves them out; training does not, because they are real people too." },
+  { column: "source", group: "extra", origin: "sent", what: "Marks special rows: demo for the presenter screen's volunteers, local_import for the owner's own early test solves. Empty for normal play.", why: "So those rows can be told apart. Training does not leave them out, because they are real people too." },
   { column: "extreme_limit_ms", group: "extra", origin: "sent", what: "Used only by the old Extreme mode, which had a clock per puzzle. The sprint leaves it empty.", why: "Kept so older rows still make sense." },
 ];
 
 // Only if you choose a nickname (table `players`).
 export const PLAYERS: StoredItem[] = [
   { column: "player_id", group: "you", origin: "sent", what: "The same random ID as above.", why: "Links your nickname to your anonymous solves." },
-  { column: "nickname", group: "you", origin: "sent", what: "The leaderboard name you picked (2 to 16 characters), only if you picked one. It is public: it shows on the board and on result links you share.", why: "So you can find yourself on the leaderboard." },
+  { column: "nickname", group: "you", origin: "sent", what: "The name you picked (2 to 16 characters), only if you picked one. It is public: it shows on result links you share.", why: "So a result you share can carry your name instead of an anonymous label." },
   { column: "nickname_lower", group: "you", origin: "server", what: "A lowercase copy of your nickname.", why: "So two people cannot take the same name that differs only by capital letters." },
   { column: "created_at", group: "extra", origin: "server", what: "When you first set a nickname.", why: "Limits how many new nicknames can be created per minute." },
   { column: "updated_at", group: "extra", origin: "server", what: "When you last changed it.", why: "Limits changes to one every 5 seconds per ID." },
@@ -65,7 +65,7 @@ export const DEVICE: { key: string; what: string }[] = [
   { key: "yomi_player", what: "Your random anonymous ID. Sent with every solve (see above)." },
   { key: "yomi_nick", what: "Your nickname, if the server accepted one." },
   { key: "yomi_nick_pending", what: "A nickname you typed that could not be saved yet (offline). Retried later." },
-  { key: "yomi_start_done", what: "That you answered the nickname question." },
+  { key: "yomi_start_done", what: "Only read, never written now: set by an older start screen that asked about a nickname. It just stops the how-to-play showing again." },
   { key: "yomi_tutorial_done", what: "That you have seen the how-to-play." },
   { key: "yomi_done", what: "Which puzzles you have solved, so the next one is new." },
   { key: "yomi_seen", what: "Which puzzles you have solved or skipped." },
@@ -92,9 +92,9 @@ export const NOT_STORED: { item: string; detail: string }[] = [
 ];
 
 export const USES: string[] = [
-  "To train the model that predicts how hard a puzzle is and where people get stuck. Only finished Regular solves are used, including the projector-screen volunteers and the owner's early local solves, who are real people too. Extreme runs and a few early test rows are left out.",
-  "To rank the Most Unpredictable in Yomi leaderboard. Projector-screen volunteers are not ranked.",
-  "For the stats page: totals, typical times and where people get stuck, as aggregates.",
+  "To train the model that predicts how hard a puzzle is and where people get stuck. Only finished Regular solves are used, including the projector-screen volunteers and the owner's early local solves, who are real people too. Extreme runs and a few early test rows are left out. Training is a manual batch job, run by a person from time to time. The model does not change while you play, and your solve is not used until the next time it is run.",
+  "To show you your own attempts on the Your attempts page: they are looked up by your anonymous ID, and you can download them. Nobody else's attempts are shown there.",
+  "For the What the data shows page: totals, where people get stuck, and, once there is enough data, how the model's guesses compare with what happened. These are aggregates, with no IDs or nicknames.",
   "To build a result page when you share a link: your time, backtracks, mode and your nickname (or an anonymous label like Anon 3f2a). It never shows your random ID or your move log.",
 ];
 

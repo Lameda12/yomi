@@ -67,13 +67,13 @@ test("within 10% is spot on", () => {
   assert.equal(explainGap({ ...base, actualMs: 52_000 }), "Right on Yomi's guess. Within 10% of Yomi's guess.");
 });
 
-test("solver_effort never claims a time gap and says the model is still learning", () => {
+test("solver_effort never claims a time gap and says the guess is not a time yet", () => {
   const solver: GapInput = { ...base, label: "solver_effort", predicted: { value: 72, unit: "solver_steps" }, actualMs: 90_000 };
   const p = gapParts({ ...solver, backtracks: 4, pause: { ms: 9_000, cell: [2, 3] } });
   assert.equal(p.headline, null, "no percentage for solver steps");
-  assert.equal(p.detail, "You paused 9 s near the 3rd dot and backtracked 4 times. Yomi's model is still learning from real players, so its guess is not a time yet.");
+  assert.equal(p.detail, "You paused 9 s near the 3rd dot and backtracked 4 times. Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.");
   assert.doesNotMatch(p.detail, /faster|slower|%/);
-  assert.equal(explainGap(solver), "A clean run with no backtracks. Yomi's model is still learning from real players, so its guess is not a time yet.");
+  assert.equal(explainGap(solver), "A clean run with no backtracks. Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.");
 });
 
 test("no model or a bad prediction falls back to the learning line, never a ratio", () => {

@@ -8,6 +8,7 @@ The report states the real numbers, including "not run" when there is not enough
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from ml.evaluate import STUCK_TARGET, WITHIN, Result, eval_stuck, eval_time  # noqa: E402
 from ml.export import MODEL_JSON, write_model_json  # noqa: E402
+from ml.history import HISTORY_JSON, REPORT_ARCHIVE, append_entry, archive_report, build_entry  # noqa: E402
 from ml.features import PUZZLE_FEATURES, cell_features, load_puzzles  # noqa: E402
 from ml.train_stuck import MIN_STUCK_SOLVES, StuckModel, stuck_solves_from_frame, train_stuck  # noqa: E402
 from ml.train_time import LABEL_SOLVER, MIN_HUMAN_SOLVES, TimeModel, log, solves_from_frame, train  # noqa: E402
@@ -121,7 +123,8 @@ Generated {today} by `python -m ml.pipeline`. Numbers below are what the data ga
 
 - The deployed model is the solver-effort fallback. The honest way to describe it is "predicts how hard it'll be", not "predicts your time".
 - Both evaluations need real data we do not have yet: 30+ completed human solves from 2+ players (and for the time model, 30+ in each training fold). The code for both is written and unit-tested on synthetic data, and those synthetic tests are not results.
-- Next: run `python -m ml.pipeline --source neon` once the live site has collected solves. It overwrites `web/public/model.json` and this file.
+- Next: run `python -m ml.pipeline --source neon` once the live site has collected solves. It overwrites `web/public/model.json` and this file (the previous report stays in `reports/history/`), and appends a line to `web/public/model_history.json`.
+- The model does not learn while people play. Solves are stored, and a person runs the pipeline to retrain it in a batch.
 """
     return "\n\n".join([head, time_section(time_m, t_res, n_players), stuck_section(stuck_m, s_res)]) + tail
 
@@ -133,6 +136,8 @@ def main() -> int:
     ap.add_argument("--exclude-player", action="append", default=[], metavar="UUID", help="drop this player's rows; repeatable")
     ap.add_argument("--out", type=Path, default=MODEL_JSON, help="model.json path")
     ap.add_argument("--report", type=Path, default=REPORT, help="report path")
+    ap.add_argument("--history", type=Path, default=HISTORY_JSON, help="append-only model history (JSON list)")
+    ap.add_argument("--archive-dir", type=Path, default=REPORT_ARCHIVE, help="where each run's report copy is kept")
     args = ap.parse_args()
 
     import analysis  # same loader and solve_id dedupe as the other scripts
@@ -158,6 +163,11 @@ def main() -> int:
     path = write_model_json(time_m, args.out, stuck=stuck_m)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(build_report(source, n_rows, time_m, stuck_m, t_res, s_res, n_players, n_cells))
+    version = json.loads(path.read_text())["version"]
+    entry = build_entry(version, source, n_rows, n_players, time_m, stuck_m, t_res, s_res)
+    added = append_entry(entry, args.history)
+    archived = archive_report(args.report, version, args.archive_dir)
+    print(f"history: {'added' if added else 'unchanged (same as the last entry)'} {version} in {args.history}; report kept at {archived}")
     print(f"label={time_m.label} human_solves={time_m.human_solves} players={n_players} stuck_trained={stuck_m.trained}")
     print(f"time eval: {t_res.status} {t_res.reason}".strip())
     print(f"stuck eval: {s_res.status} {s_res.reason}".strip())

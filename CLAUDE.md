@@ -11,7 +11,7 @@ Owner: Andi. Works 1 to 2 hours a day. Ship small and working before polished.
 Formula: **Hook → Fix → Proof.** Gen Z voice: casual, punchy, a bit of slang, never cringe, never fake.
 
 - **Hook:** You thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that before you start. 👀
-- **Fix:** Zip-style path puzzle + an ML model that predicts your time and your 3 stuck spots before you play. You try to beat it. Result card shows predicted vs actual. The model learns from every solve.
+- **Fix:** Zip-style path puzzle + an ML model that predicts your time and your 3 stuck spots before you play. You try to beat it. Result card shows predicted vs actual. Every solve is stored, and the model is retrained by hand in batches (it does not update while you play).
 - **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, 26 ml tests passing.
 
 Honesty rules for copy (these override hype):
@@ -39,7 +39,7 @@ Tasks (update the checkboxes as you finish them):
 
 Extras, only if everything above is done: a test that /stats totals match DB counts; a test that a 429 never drops a solve.
 
-Sprint 3 (Oct 22 to 29): personalization, the "Most Unpredictable in Yomi" leaderboard, model-tuned daily difficulty, retraining on the full data, showcase demo rehearsal.
+Sprint 3 (Oct 22 to 29): personalization, model-tuned daily difficulty, retraining on the full data, showcase demo rehearsal.
 
 ## Repo map
 
@@ -53,7 +53,7 @@ Sprint 3 (Oct 22 to 29): personalization, the "Most Unpredictable in Yomi" leade
   - `lib/stuck.ts`: server-side stuck-cell calculation.
   - `app/api/solves/route.ts`: POST, zod validation, body cap, rate limit (TODO: keyed on a client-sent id, not real abuse protection).
   - `app/api/export/route.ts`: CSV export.
-  - `app/stats/`: stats page (counts, median times, stuck heatmaps, backtracks vs time).
+  - `app/stats/` (What the data shows), `app/learn/` (How Yomi learns), `app/you/` (Your attempts): the learning pages. No leaderboard; `/board` redirects to `/learn`. Charts appear only above the display thresholds in `lib/insights.ts`.
   - `migrations/`, `scripts/migrate.mjs`: Neon schema.
 - `ml/` (Sprint 2, new): features, training, evaluation, export.
 - `DEMO.md`: showcase talk track. Keep it in sync with behavior.

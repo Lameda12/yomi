@@ -8,6 +8,11 @@ export interface Replay {
   solveMs: number; // ms from first move to last move
 }
 
+export interface ReplayStep {
+  t: number; // ms since the first move
+  path: Cell[];
+}
+
 /**
  * Rebuild an attempt from its event log, so the server never trusts the client's
  * solve time, backtrack count or "completed" flag.
@@ -20,8 +25,10 @@ export interface Replay {
  * Returns null when the log cannot come from a real game: time going backwards,
  * diagonal or overlong jumps, revisited cells, dots out of order, or an undo
  * whose head is not on the path.
+ *
+ * Pass `steps` to also get the path after every event (the first entry is the start, t = 0), for drawing a replay.
  */
-export function replay(n: number, dots: Dot[], events: GameEvent[]): Replay | null {
+export function replay(n: number, dots: Dot[], events: GameEvent[], steps?: ReplayStep[]): Replay | null {
   const one = dots.find((d) => d[2] === 1);
   if (!one) return null;
   const labelAt = new Map(dots.map(([r, c, v]) => [r * n + c, v]));
@@ -29,6 +36,7 @@ export function replay(n: number, dots: Dot[], events: GameEvent[]): Replay | nu
   let backtracks = 0;
   let lastWasUndo = false;
   let prevT = 0;
+  steps?.push({ t: 0, path: path.slice() });
 
   for (const [t, r, c, len] of events) {
     if (t < prevT || r < 0 || r >= n || c < 0 || c >= n) return null;
@@ -62,6 +70,7 @@ export function replay(n: number, dots: Dot[], events: GameEvent[]): Replay | nu
     } else {
       return null; // the game only logs real changes
     }
+    steps?.push({ t, path: path.slice() });
   }
 
   return {

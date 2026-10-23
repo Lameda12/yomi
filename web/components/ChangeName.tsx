@@ -10,7 +10,6 @@ export default function ChangeName({ onSaved }: { onSaved?: () => void }) {
     return (
       <div className="mt-3 flex w-full justify-center">
         <NameForm
-          variant="change"
           onCancel={() => setOpen(false)}
           onDone={() => {
             setOpen(false);

@@ -7,7 +7,7 @@ import { explainGap, gapParts, objectiveLine, targetCopy, type GapInput } from "
 import { finishKind } from "@/lib/finish";
 import { sharePath, shareMessage } from "@/lib/share";
 import { findStuck, type GameEvent } from "@/lib/stuck";
-import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
+import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
 import {
@@ -23,7 +23,6 @@ import GameMenu from "./GameMenu";
 import PathLine from "./PathLine";
 import { SprintOver, SprintReady, SprintRules } from "./SprintPanels";
 import StreakChip from "./StreakChip";
-import NameForm from "./NameForm";
 import Tutorial from "./Tutorial";
 
 export interface PublicPuzzle {
@@ -159,9 +158,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   // A new player lands on a puzzle with the tutorial on top, skippable with one tap. People who already played
   // (a solve, or the old start screen answered) never see it unless they open "How to play".
   const [tutorial, setTutorial] = useState(() => !demo && !tutorialSeen() && !startDone() && readList(DONE_KEY).length === 0);
-  // The optional nickname prompt on the first result card. Answered (skipped or saved) once, never blocks play.
-  const [nameAsked, setNameAsked] = useState(() => demo || startDone() || savedNickname() !== "");
-  const [nameOpen, setNameOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [done, setDone] = useState<string[]>(() => readList(DONE_KEY));
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
@@ -939,20 +935,6 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               </p>
             </div>
             </>)}
-            {!demo && !nameAsked &&
-              (nameOpen ? (
-                <NameForm variant="start" onDone={() => setNameAsked(true)} />
-              ) : (
-                <p className="flex flex-wrap items-center justify-center gap-2 text-xs" data-testid="name-prompt">
-                  Want your name on the board?
-                  <button onClick={() => { markStartDone(); setNameAsked(true); }} className="min-h-11 rounded-lg border-2 border-foreground px-4 font-semibold">
-                    No thanks
-                  </button>
-                  <button onClick={() => setNameOpen(true)} className="min-h-11 rounded-lg border border-foreground/30 px-4">
-                    Add nickname
-                  </button>
-                </p>
-              ))}
             <p className="text-xs opacity-70">
               {submit === "sending" && "Saving…"}
               {submit === "saved" && "Solve logged. Thank you."}
