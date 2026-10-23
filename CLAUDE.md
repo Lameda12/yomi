@@ -94,6 +94,7 @@ Evaluation (leave-one-player-out):
 - Anonymous only: a `player_id` UUID in localStorage. No names, emails or IP addresses.
 - Never commit `data/`, `.env*`, `node_modules`, `.next`, `reports/*.png`.
 - Label honesty: always say whether a difficulty label comes from humans or from a solver.
+- Train on `mode = 'regular'` solves only (Extreme is played against a clock). Rows tagged `source = 'local_import'` or `'demo'` are real people but can be filtered out by that column.
 
 ## Conventions
 

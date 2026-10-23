@@ -100,7 +100,8 @@ def human_records(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] 
     The schema has no "test row" marker, so test and fake rows are dropped by player id
     (`exclude_players`) or by row id (`exclude_ids`, see EXCLUDED_ROW_IDS). Delete fake rows
     from the database after a test, as CLAUDE.md says.
-    Rows that cannot be a real timed solve (no time, unknown puzzle) are dropped too.
+    Rows that cannot be a real timed solve (no time, unknown puzzle) are dropped too, and so are
+    mode = 'extreme' solves: models train on regular play only.
     """
     if df is None or len(df) == 0:
         return []
@@ -112,6 +113,11 @@ def human_records(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] 
         if not row.get("completed") or ms is None or not math.isfinite(float(ms)) or float(ms) <= 0:
             continue
         if str(row["player_id"]) in excluded or str(row.get("id")) in excluded_ids or str(row["puzzle_id"]) not in puzzle_ids:
+            continue
+        # Extreme mode solves are played against a clock, so they say little about natural solve time.
+        # Rows without a mode (older data, or NaN from a mixed file) are regular.
+        mode = row.get("mode")
+        if isinstance(mode, str) and mode != "regular":
             continue
         out.append(row)
     return out

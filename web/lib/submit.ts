@@ -11,6 +11,8 @@ export interface SolvePayload {
   events: GameEvent[];
   played_zip_before: boolean | null;
   // What Yomi predicted before the solve; null when no model loaded. Old queued payloads lack it.
+  mode?: "regular" | "extreme"; // missing on payloads queued before this existed = regular
+  extreme_limit_ms?: number | null; // the clock this attempt played against (extreme only)
   source?: "demo"; // set only by the /demo presenter screen
   prediction?: { value: number; unit: "ms" | "solver_steps"; model_version: string } | null;
 }

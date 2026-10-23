@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findStuck, type GameEvent } from "@/lib/stuck";
+import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
 import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
 import { addDay, daysBefore, streakState } from "@/lib/streak";
@@ -15,7 +16,8 @@ export interface PublicPuzzle {
   dots: Dot[];
 }
 
-type Status = "idle" | "playing" | "solved";
+type Status = "idle" | "playing" | "solved" | "timeout"; // timeout: extreme mode, the clock ran out
+type Mode = "regular" | "extreme";
 type Submit = "none" | "sending" | "saved" | "queued" | "failed";
 
 const MAX_EVENTS = 5000;
@@ -25,6 +27,8 @@ const DONE_KEY = "yomi_done"; // solved puzzle ids
 const SEEN_KEY = "yomi_seen"; // solved or skipped, drives which puzzle comes next
 const ZIP_BEFORE_KEY = "yomi_zip_before";
 const STREAK_KEY = "yomi_streak_days"; // local calendar days with at least one solve
+const MODE_KEY = "yomi_mode"; // regular (default) or extreme
+const WINS_KEY = "yomi_extreme_wins"; // consecutive extreme wins; each one tightens the clock
 
 function readList(key: string): string[] {
   try {
@@ -41,6 +45,29 @@ function addToList(key: string, id: string): string[] {
     localStorage.setItem(key, JSON.stringify(next));
   } catch {}
   return next;
+}
+
+function readMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "extreme" ? "extreme" : "regular";
+  } catch {
+    return "regular";
+  }
+}
+
+function readWins(): number {
+  try {
+    const n = Number(localStorage.getItem(WINS_KEY));
+    return Number.isInteger(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeLocal(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
 }
 
 function readZipBefore(): boolean | null {
@@ -104,6 +131,8 @@ interface Attempt {
   events: GameEvent[];
   lastWasUndo: boolean;
   device: "mouse" | "touch" | null;
+  mode: Mode; // locked at the first move, so the toggle cannot change an attempt in progress
+  limitMs: number | null; // extreme mode: the clock this attempt plays against, locked at the first move
 }
 
 const newAttempt = (p: PublicPuzzle): Attempt => ({
@@ -115,6 +144,8 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
   events: [],
   lastWasUndo: false,
   device: null,
+  mode: "regular",
+  limitMs: null,
 });
 
 export default function ZipGame({ puzzles, coreCount, prediction, demo = false }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null; demo?: boolean }) {
@@ -135,6 +166,12 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   // Demo screen only: each volunteer is a fresh anonymous player (so one person at the keyboard is not one "player"
   // for every volunteer), and the stuck heatmap of earlier solvers is revealed after the solve.
   const [volunteer, setVolunteer] = useState(() => crypto.randomUUID());
+  // Extreme mode: Regular stays the default. Wins in a row tighten the clock; "medians" is the crowd's typical time.
+  const [mode, setMode] = useState<Mode>(() => (demo ? "regular" : readMode()));
+  const [extremeWins, setExtremeWins] = useState(readWins);
+  const [medians, setMedians] = useState<Record<string, { median_ms: number; n: number }> | null>(null);
+  const [extremeWin, setExtremeWin] = useState<{ marginMs: number; limitMs: number } | null>(null);
+  const [lockedLimit, setLockedLimit] = useState<number | null>(null); // the running attempt's clock, fixed at the first move
   const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
 
   const attempt = useRef<Attempt>(newAttempt(puzzle));
@@ -149,6 +186,32 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: prediction.label === "human_time" ? ("ms" as const) : ("solver_steps" as const), version: prediction.version };
   }, [prediction, puzzle.id, demo, volunteer]);
+
+  // Only needed (and only fetched) in extreme mode, when the model cannot give a time in milliseconds.
+  useEffect(() => {
+    if (mode !== "extreme" || medians) return;
+    let alive = true;
+    fetch("/api/medians")
+      .then((res) => (res.ok ? (res.json() as Promise<Record<string, { median_ms: number; n: number }>>) : {}))
+      .catch(() => ({}))
+      .then((m) => {
+        if (alive) setMedians(m);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mode, medians]);
+
+  // The clock for this puzzle: 80% (less after each consecutive win, floor 50%) of the model's time for this player,
+  // else of the puzzle's crowd median, else 60 s to start.
+  const limitInfo = useMemo(() => {
+    if (mode !== "extreme") return null;
+    const crowd = medians?.[puzzle.id];
+    const modelMs = prediction?.label === "human_time" && predicted?.unit === "ms" ? predicted.value : null;
+    const base = extremeBase({ modelMs, crowdMedianMs: crowd?.median_ms ?? null });
+    // ready: the model or the crowd data has arrived, so the clock will not change under the player's hands.
+    return { ms: extremeLimit(base.ms, extremeWins), source: base.source, factor: extremeFactor(extremeWins), crowdN: crowd?.n ?? 0, ready: modelMs !== null || medians !== null };
+  }, [mode, prediction, predicted, medians, puzzle.id, extremeWins]);
 
   const { n, dots } = puzzle;
   const number = puzzles.findIndex((p) => p.id === puzzle.id) + 1;
@@ -189,12 +252,28 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         started_at_ms: a.startedAtMs,
         events: a.events,
         played_zip_before: readZipBefore(),
+        mode: a.mode,
+        extreme_limit_ms: a.mode === "extreme" ? a.limitMs : null,
         prediction: predicted ? { value: predicted.value, unit: predicted.unit, model_version: predicted.version } : null,
       });
       if (completed) setSubmit(result);
     },
     [puzzle.id, puzzle.n, predicted, demo, volunteer],
   );
+
+  // Extreme mode: the clock ran out. Log the attempt, reset the grid, and offer an instant Retry.
+  const timeUp = useCallback(() => {
+    const a = attempt.current;
+    if (a.t0 === null || a.limitMs === null) return;
+    dragging.current = false;
+    void send(false, a.limitMs);
+    a.path = [startCell(puzzle)];
+    setPath(a.path);
+    setElapsed(a.limitMs);
+    setStatus("timeout");
+    setExtremeWins(0);
+    writeLocal(WINS_KEY, "0");
+  }, [send, puzzle]);
 
   // Ask for the predicted stuck cells once the solve is over. Any failure just means no overlay.
   const fetchStuck = useCallback(async (id: string) => {
@@ -227,6 +306,9 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       if (a.t0 === null) {
         a.t0 = now;
         a.startedAtMs = Date.now();
+        a.mode = limitInfo ? "extreme" : "regular";
+        a.limitMs = limitInfo?.ms ?? null;
+        setLockedLimit(a.limitMs);
         setStatus("playing");
       }
       if (kind !== "extend" && !a.lastWasUndo) {
@@ -243,6 +325,17 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
 
       if (kind === "extend" && isSolved(n, dots, next)) {
         const ms = now - a.t0;
+        if (a.mode === "extreme" && a.limitMs !== null && ms > a.limitMs) {
+          timeUp(); // finished, but after the clock: not a win
+          return;
+        }
+        if (a.mode === "extreme" && a.limitMs !== null) {
+          setExtremeWin({ marginMs: a.limitMs - ms, limitMs: a.limitMs });
+          setExtremeWins((w) => {
+            writeLocal(WINS_KEY, String(w + 1));
+            return w + 1;
+          });
+        }
         setElapsed(ms);
         setStatus("solved");
         setStuck(findStuck(a.events).cell);
@@ -259,7 +352,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         if (demo) void fetchHeat(puzzle.id);
       }
     },
-    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo],
+    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, limitInfo, timeUp],
   );
 
   // Try to move the path head to `target`: undo if it is on the path already,
@@ -294,6 +387,16 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     [commit, labelAt, n],
   );
 
+  // The countdown: check the clock every 100 ms while an extreme attempt is running.
+  useEffect(() => {
+    if (status !== "playing" || attempt.current.mode !== "extreme") return;
+    const id = setInterval(() => {
+      const a = attempt.current;
+      if (a.t0 !== null && a.limitMs !== null && performance.now() - a.t0 >= a.limitMs) timeUp();
+    }, 100);
+    return () => clearInterval(id);
+  }, [status, timeUp]);
+
   const cellAt = (e: React.PointerEvent): Cell | null => {
     const rect = board.current!.getBoundingClientRect();
     const c = Math.floor(((e.clientX - rect.left) / rect.width) * n);
@@ -302,7 +405,8 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   };
 
   const onDown = (e: React.PointerEvent) => {
-    if (status === "solved") return;
+    if (status === "solved" || status === "timeout") return;
+    if (limitInfo && !limitInfo.ready) return; // extreme: wait for the clock to load (a moment) so it cannot change mid-play
     const cell = cellAt(e);
     if (!cell) return;
     e.preventDefault();
@@ -325,16 +429,20 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   };
 
   const clear = () => {
-    if (status === "solved" || attempt.current.path.length <= 1) return;
+    if (status === "solved" || status === "timeout" || attempt.current.path.length <= 1) return;
     commit([startCell(puzzle)], "clear");
   };
 
   const next = () => {
     const a = attempt.current;
     if (status !== "solved") {
-      // Log abandoned attempts too: giving up is a difficulty signal.
-      if (a.t0 !== null) void send(false, performance.now() - a.t0);
+      // Log abandoned attempts too: giving up is a difficulty signal. (A timeout was already logged.)
+      if (a.t0 !== null && status !== "timeout") void send(false, performance.now() - a.t0);
       addToList(SEEN_KEY, puzzle.id);
+      if (a.mode === "extreme" && status === "playing") {
+        setExtremeWins(0); // skipping mid-clock is a loss
+        writeLocal(WINS_KEY, "0");
+      }
     }
     const p = pickPuzzle(puzzles, coreCount, puzzle.id, demo);
     if (demo) {
@@ -351,7 +459,40 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setSubmit("none");
     setStuck(null);
     setPredStuck(null);
+    setExtremeWin(null);
+    setLockedLimit(null);
     setCopied(false);
+  };
+
+  // Instant retry after a timeout: same puzzle, fresh attempt, clock waits for the first move again.
+  const retry = useCallback(() => {
+    attempt.current = newAttempt(puzzle);
+    dragging.current = false;
+    setPath([startCell(puzzle)]);
+    setStatus("idle");
+    setElapsed(0);
+    setBacktracks(0);
+    setSubmit("none");
+    setStuck(null);
+    setLockedLimit(null);
+  }, [puzzle]);
+
+  // Enter retries too (one key). preventDefault stops a focused Retry button from also firing its own click.
+  useEffect(() => {
+    if (status !== "timeout") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      retry();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [status, retry]);
+
+  const chooseMode = (m: Mode) => {
+    if (m === mode || status !== "idle") return;
+    setMode(m);
+    writeLocal(MODE_KEY, m);
   };
 
   const shareLine = `Yomi #${number}: ${clock(elapsed)}, ${backtracks} backtrack${backtracks === 1 ? "" : "s"}`;
@@ -369,6 +510,17 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const today = new Date();
   const streak = streakState(streakDays, today);
   const dayLetter = (back: number) => "SMTWTFS"[new Date(daysBefore(today, back) + "T12:00").getDay()];
+
+  const limit = lockedLimit ?? limitInfo?.ms ?? 0;
+  const remaining = status === "playing" ? Math.max(0, limit - elapsed) : status === "timeout" ? 0 : limit;
+  const basis =
+    limitInfo?.source === "model"
+      ? `${Math.round(limitInfo.factor * 100)}% of Yomi's time for you`
+      : limitInfo?.source === "crowd"
+        ? `${Math.round(limitInfo.factor * 100)}% of the typical time (${limitInfo.crowdN} solves)`
+        : limitInfo
+          ? `no data on this puzzle yet, so ${clock(limitInfo.ms)} to start`
+          : "";
 
   const points = path.map(([r, c]) => `${c + 0.5},${r + 0.5}`).join(" ");
   const onPath = new Set(path.map(([r, c]) => r * n + c));
@@ -391,6 +543,24 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         <span className="opacity-60">{done.length} solved</span>
       </div>
 
+      {!demo && (
+        <div role="group" aria-label="Game mode" className="flex w-full rounded-xl border border-foreground/20 p-1" data-testid="mode-toggle">
+          {(["regular", "extreme"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => chooseMode(m)}
+              aria-pressed={mode === m}
+              disabled={status !== "idle" && mode !== m}
+              className={`min-h-11 flex-1 rounded-lg px-3 py-2 text-sm font-medium capitalize disabled:opacity-40 ${
+                mode === m ? (m === "extreme" ? "bg-orange-500 text-white" : "bg-foreground text-background") : ""
+              }`}
+            >
+              {m === "extreme" ? "Extreme ⚡" : "Regular"}
+            </button>
+          ))}
+        </div>
+      )}
+
       {prediction && predicted && status !== "solved" && (
         <p className={demo ? "text-center text-xl leading-snug" : "text-center text-xs"} data-testid="prediction">
           {prediction.label === "human_time" ? (
@@ -404,15 +574,50 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         </p>
       )}
 
+      {limitInfo && (
+        <div className="flex w-full flex-col gap-1" data-testid="countdown">
+          <div className="flex items-baseline justify-between font-mono text-xs">
+            <span>{!limitInfo.ready ? "Loading the clock…" : status === "solved" && extremeWin ? "Clock stopped" : `Beat Yomi's clock: ${clock(limit)}`}</span>
+            <span className={remaining < limit * 0.25 && status === "playing" ? "text-rose-600" : ""} data-testid="remaining">
+              {limitInfo.ready ? `${(remaining / 1000).toFixed(1)}s left` : "–"}
+            </span>
+          </div>
+          <div
+            role="progressbar"
+            aria-label="Time left on the clock"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(limit / 1000)}
+            aria-valuenow={Math.round(remaining / 1000)}
+            className="h-3 w-full overflow-hidden rounded-full bg-foreground/10"
+          >
+            <div
+              className={`h-full ${remaining < limit * 0.25 ? "bg-rose-500" : "bg-orange-500"}`}
+              style={{ width: `${limit > 0 ? Math.min(100, (100 * remaining) / limit) : 0}%` }}
+            />
+          </div>
+          <p className="text-[11px] opacity-60">{limitInfo.ready ? `${basis}. Clock starts on your first move.` : "One moment."}</p>
+        </div>
+      )}
+
       <div
         ref={board}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
-        className="relative aspect-square w-full touch-none select-none overflow-hidden rounded-xl border-2 border-foreground/80 bg-background"
+        className={`relative aspect-square w-full touch-none select-none overflow-hidden rounded-xl border-2 border-foreground/80 bg-background ${status === "timeout" ? "yomi-shake" : ""}`}
         style={{ WebkitTouchCallout: "none" }}
       >
+        {status === "timeout" && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 p-4 text-center" data-testid="timeout">
+            <p className="text-2xl font-bold">Time&apos;s up</p>
+            <p className="text-sm opacity-70">The clock was {clock(lockedLimit ?? limit)}. The grid is reset.</p>
+            <button onClick={retry} autoFocus className="min-h-11 rounded-lg bg-orange-500 px-8 py-2 text-lg font-semibold text-white">
+              Retry
+            </button>
+            <p className="text-xs opacity-60">Press Enter</p>
+          </div>
+        )}
         <div className="absolute inset-0 grid" style={{ gridTemplateColumns: `repeat(${n}, 1fr)` }}>
           {Array.from({ length: n * n }, (_, i) => (
             <div
@@ -494,7 +699,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         <div className="flex gap-2">
           <button
             onClick={clear}
-            disabled={status === "solved" || path.length <= 1}
+            disabled={status === "solved" || status === "timeout" || path.length <= 1}
             className={`rounded-lg border border-foreground/30 px-4 py-2 disabled:opacity-30 ${demo ? "min-h-14 text-lg" : "min-h-11"}`}
           >
             Clear
@@ -508,7 +713,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       <div className={`w-full text-center ${demo ? "min-h-20 text-lg" : "min-h-24 text-sm"}`} aria-live="polite">
         {status === "idle" && (
           <div className="flex flex-col gap-1">
-            <p>Start at 1. Connect the dots in order and fill every cell.</p>
+            <p>Start at 1. Connect the dots in order and fill every cell.{mode === "extreme" && " The clock starts on your first move."}</p>
             {!demo && streak.atRisk && (
               <p className="text-orange-600">
                 Solve one today to keep your {streak.count}-day streak 🔥
@@ -518,6 +723,12 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         )}
         {status === "solved" && (
           <div className="flex flex-col items-center gap-2">
+            {extremeWin && (
+              <p className="text-xl font-bold text-green-600" data-testid="extreme-win">
+                {extremeWin.marginMs < 1000 ? "Beat Yomi's clock by less than a second" : `Beat Yomi's clock by ${clock(extremeWin.marginMs)}`}
+                {extremeWins > 1 && <span className="block text-sm font-normal opacity-80">{extremeWins} in a row. Next clock: {Math.round(extremeFactor(extremeWins) * 100)}%.</span>}
+              </p>
+            )}
             <p>
               Solved in <b>{clock(elapsed)}</b> with <b>{backtracks}</b> backtrack{backtracks === 1 ? "" : "s"}.
               {stuck && (

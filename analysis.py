@@ -164,6 +164,25 @@ def plot_datasets(corr: dict[str, pd.Series]) -> None:
 FEATURES = ("grid_size", "n_dots", "max_gap", "mean_gap", "turns")
 
 
+def mode_comparison(solves: pd.DataFrame) -> dict | None:
+    """Median solve time, extreme vs regular, over the puzzles with a completed solve in both modes.
+
+    Extreme counts only solves that finished (a timeout is not a solve time), so it is biased fast: say so
+    wherever it is shown. Rows without a mode (older data) are regular. None when no puzzle has both.
+    """
+    if solves.empty or "mode" not in solves.columns:
+        return None
+    done = solves[solves.completed].copy()
+    done["mode"] = done["mode"].where(done["mode"].isin(["regular", "extreme"]), "regular")
+    both = set(done[done["mode"] == "regular"].puzzle_id) & set(done[done["mode"] == "extreme"].puzzle_id)
+    if not both:
+        return None
+    d = done[done.puzzle_id.isin(both)]
+    reg, ext = d[d["mode"] == "regular"].solve_ms, d[d["mode"] == "extreme"].solve_ms
+    return {"n_puzzles": len(both), "regular_s": float(reg.median() / 1000), "extreme_s": float(ext.median() / 1000),
+            "n_regular": len(reg), "n_extreme": len(ext)}
+
+
 def solve_stats(solves: pd.DataFrame, zips: dict[str, dict]) -> dict:
     stats: dict = {"n_rows": len(solves)}
     if solves.empty:
@@ -178,6 +197,7 @@ def solve_stats(solves: pd.DataFrame, zips: dict[str, dict]) -> dict:
         n_puzzles=int(done.puzzle_id.nunique()),
         done=done,
     )
+    stats["mode_cmp"] = mode_comparison(solves)
     if len(done):
         stats["median_s"] = float(done.solve_ms.median() / 1000)
         stats["by_grid"] = (done.groupby("grid_size").solve_ms.agg(["median", "size"]) / [1000, 1]).round(1)
@@ -288,6 +308,11 @@ def write_findings(corr: dict[str, pd.Series], stats: dict, n_heatmaps: int, sou
         if len(stats["by_device"]):
             L.append("- Median seconds by device: " + ", ".join(
                 f"{d} {r['median']:.1f}s (n={int(r['size'])})" for d, r in stats["by_device"].iterrows()) + ".")
+        mc = stats.get("mode_cmp")
+        if mc:
+            L.append(f"- Median seconds, extreme vs regular, on the {mc['n_puzzles']} puzzles played in both modes: "
+                     f"extreme {mc['extreme_s']:.1f}s (n={mc['n_extreme']}) vs regular {mc['regular_s']:.1f}s "
+                     f"(n={mc['n_regular']}). Extreme counts only solves finished before the clock ran out, so it leans fast.")
         if "corr" in stats:
             L.append(f"- Solve time vs puzzle features: {fmt(stats['corr'])}. "
                      f"Solve time vs backtracks: {stats['corr_backtracks']:+.2f}.")

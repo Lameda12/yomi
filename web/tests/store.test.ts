@@ -12,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "yomi-store-"));
 const file = path.join(dir, "solves.jsonl");
 delete process.env.DATABASE_URL;
 process.env.SOLVES_JSONL = file;
-const { allSolves, dropSnapshot, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
+const { allSolves, dropSnapshot, extremeWins, puzzleMedians, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const solve = (solve_id: string) => ({
@@ -136,6 +136,42 @@ test("stuckHeat counts where completed solves of one puzzle got stuck, and nothi
   assert.deepEqual([...heat.cells].sort((a, b) => b.n - a.n)[0], { r: 2, c: 3, n: 2 });
   assert.equal(heat.cells.length, 2);
   assert.deepEqual(await stuckHeat("zip-never-played"), { cells: [], total: 0 });
+});
+
+test("mode and the extreme clock are stored; older rows without them count as regular", async () => {
+  const id = randomUUID();
+  await insertSolve({ ...solve(id), mode: "extreme", extreme_limit_ms: 30_000 });
+  const row = (await allSolves()).find((r) => r.solve_id === id)!;
+  assert.deepEqual([row.mode, row.extreme_limit_ms], ["extreme", 30_000]);
+  const plain = randomUUID();
+  await insertSolve(solve(plain));
+  assert.equal((await allSolves()).find((r) => r.solve_id === plain)!.mode ?? "regular", "regular");
+});
+
+test("extremeWins: only completed extreme solves that beat their clock, live-site only", async () => {
+  const before = (await extremeWins()).length;
+  const win = randomUUID();
+  await insertSolve({ ...solve(win), solve_ms: 12_000, mode: "extreme", extreme_limit_ms: 20_000 }); // margin 8 s
+  await insertSolve({ ...solve(randomUUID()), solve_ms: 25_000, mode: "extreme", extreme_limit_ms: 20_000 }); // over the clock
+  await insertSolve({ ...solve(randomUUID()), completed: false, mode: "extreme", extreme_limit_ms: 20_000 }); // timed out
+  await insertSolve({ ...solve(randomUUID()), mode: "extreme", extreme_limit_ms: null }); // no clock recorded
+  await insertSolve({ ...solve(randomUUID()), mode: "regular", extreme_limit_ms: 20_000 }); // regular never counts
+  await insertSolve({ ...solve(randomUUID()), solve_ms: 1_000, mode: "extreme", extreme_limit_ms: 20_000, source: "demo" });
+  const wins = await extremeWins();
+  assert.equal(wins.length, before + 1);
+  const row = (await allSolves()).find((r) => r.solve_id === win)!;
+  assert.deepEqual(wins.find((w) => w.player_id === row.player_id), { player_id: row.player_id, margin_ms: 8_000 });
+});
+
+test("puzzleMedians: regular completed solves only, and only with 3+ solves", async () => {
+  const mk = (puzzle_id: string, solve_ms: number, extra: object = {}) => ({ ...solve(randomUUID()), puzzle_id, solve_ms, ...extra });
+  for (const ms of [10_000, 30_000, 20_000]) await insertSolve(mk("zip-median-a", ms));
+  await insertSolve(mk("zip-median-a", 1_000, { mode: "extreme", extreme_limit_ms: 9_000 })); // extreme: ignored
+  await insertSolve(mk("zip-median-a", 99_000, { completed: false })); // skipped: ignored
+  for (const ms of [5_000, 6_000]) await insertSolve(mk("zip-median-b", ms)); // only 2: no crowd yet
+  const m = await puzzleMedians();
+  assert.deepEqual(m["zip-median-a"], { median_ms: 20_000, n: 3 });
+  assert.equal(m["zip-median-b"], undefined);
 });
 
 test("players: only 60 brand-new nicknames per minute overall", async () => {

@@ -3,6 +3,8 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { getSql } from "./db.ts";
 import { dedupeBySolveId } from "./dedupe.ts";
+import { MIN_CROWD } from "./extreme.ts";
+import type { ExtremeWin } from "./extremeBoard.ts";
 import { nicknameKey } from "./nickname.ts";
 import type { GameEvent } from "./stuck.ts";
 
@@ -30,6 +32,8 @@ export type SolveRow = {
   pred_unit?: "ms" | "solver_steps" | null;
   model_version?: string | null;
   source?: string | null; // null = played on the live site; 'local_import' = copied in from the owner's machine
+  mode?: "regular" | "extreme"; // missing on older rows = regular
+  extreme_limit_ms?: number | null; // the clock this solve played against (extreme mode only)
 };
 
 export type NewSolve = Omit<SolveRow, "id" | "created_at" | "solve_id"> & { solve_id: string };
@@ -79,12 +83,13 @@ export async function insertSolve(s: NewSolve): Promise<boolean> {
     const rows = await sql`
       insert into solves (solve_id, player_id, puzzle_id, grid_size, n_dots, device, started_at_ms, ended_at_ms,
                           solve_ms, completed, events, backtracks, max_pause_ms, stuck_cell, played_zip_before,
-                          pred_value, pred_unit, model_version, source)
+                          pred_value, pred_unit, model_version, source, mode, extreme_limit_ms)
       values (${s.solve_id}, ${s.player_id}, ${s.puzzle_id}, ${s.grid_size}, ${s.n_dots}, ${s.device},
               ${s.started_at_ms}, ${s.ended_at_ms}, ${s.solve_ms}, ${s.completed},
               ${JSON.stringify(s.events)}::jsonb, ${s.backtracks}, ${s.max_pause_ms},
               ${s.stuck_cell ? `{${s.stuck_cell[0]},${s.stuck_cell[1]}}` : null}::int[], ${s.played_zip_before},
-              ${s.pred_value ?? null}, ${s.pred_unit ?? null}, ${s.model_version ?? null}, ${s.source ?? null})
+              ${s.pred_value ?? null}, ${s.pred_unit ?? null}, ${s.model_version ?? null}, ${s.source ?? null},
+              ${s.mode ?? "regular"}, ${s.extreme_limit_ms ?? null})
       on conflict (solve_id) do nothing
       returning id`;
     return rows.length > 0;
@@ -252,12 +257,57 @@ export async function savePlayer(playerId: string, nickname: string | null): Pro
   return result;
 }
 
+// ---------- extreme mode data -----------------------------------------------------------------
+
+/** Extreme wins: completed under the clock, live-site solves only. margin = limit - solve time (always > 0). */
+export async function extremeWins(): Promise<ExtremeWin[]> {
+  const sql = getSql();
+  if (sql) {
+    const rows = await sql`
+      select player_id, (extreme_limit_ms - solve_ms) as margin_ms from solves
+      where completed and mode = 'extreme' and extreme_limit_ms is not null and extreme_limit_ms > solve_ms and source is null`;
+    return rows.map((r) => ({ player_id: String(r.player_id), margin_ms: Number(r.margin_ms) }));
+  }
+  return (await readFileRows())
+    .filter((r) => r.completed && r.mode === "extreme" && r.extreme_limit_ms != null && r.extreme_limit_ms > r.solve_ms && !r.source)
+    .map((r) => ({ player_id: r.player_id, margin_ms: (r.extreme_limit_ms as number) - r.solve_ms }));
+}
+
+/**
+ * Median solve time per puzzle over completed regular-mode solves (Extreme solves are left out so the clock does not
+ * feed on itself). Only puzzles with MIN_CROWD+ solves are returned.
+ */
+export async function puzzleMedians(): Promise<Record<string, { median_ms: number; n: number }>> {
+  const sql = getSql();
+  const out: Record<string, { median_ms: number; n: number }> = {};
+  if (sql) {
+    const rows = await sql`
+      select puzzle_id, percentile_cont(0.5) within group (order by solve_ms) as median_ms, count(*)::int as n
+      from solves where completed and mode = 'regular' group by puzzle_id having count(*) >= ${MIN_CROWD}`;
+    for (const r of rows) out[String(r.puzzle_id)] = { median_ms: Math.round(Number(r.median_ms)), n: Number(r.n) };
+    return out;
+  }
+  const by = new Map<string, number[]>();
+  for (const r of await readFileRows()) {
+    if (!r.completed || (r.mode ?? "regular") !== "regular") continue;
+    by.set(r.puzzle_id, [...(by.get(r.puzzle_id) ?? []), r.solve_ms]);
+  }
+  for (const [id, times] of by) {
+    if (times.length < MIN_CROWD) continue;
+    const t = [...times].sort((a, b) => a - b);
+    const m = t.length >> 1;
+    out[id] = { median_ms: Math.round(t.length % 2 ? t[m] : (t[m - 1] + t[m]) / 2), n: t.length };
+  }
+  return out;
+}
+
 // ---------- leaderboard snapshot (shared 5 s cache) ------------------------------------------
 
 export interface LeaderboardSnapshot {
   solves: PredictedSolve[];
   names: Map<string, string>; // every nickname, so "you" never needs its own query
   totals: { solves: number; players: number };
+  extreme: ExtremeWin[];
 }
 
 const SNAPSHOT_MS = 5_000;
@@ -283,8 +333,8 @@ export async function leaderboardSnapshot(): Promise<LeaderboardSnapshot> {
   if (snapshot && Date.now() - snapshot.at < SNAPSHOT_MS) return snapshot.data;
   loading ??= (async () => {
     try {
-      const [solves, names, totals] = await Promise.all([predictedSolves(), allNicknames(), solveTotals()]);
-      const data = { solves, names, totals };
+      const [solves, names, totals, extreme] = await Promise.all([predictedSolves(), allNicknames(), solveTotals(), extremeWins()]);
+      const data = { solves, names, totals, extreme };
       snapshot = { at: Date.now(), data };
       return data;
     } finally {

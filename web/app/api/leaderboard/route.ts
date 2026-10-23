@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildExtremeBoard } from "@/lib/extremeBoard";
 import { CAP_MS, MIN_SOLVES, TOP_N, buildBoard } from "@/lib/leaderboard";
 import { loadModel } from "@/lib/model";
 import { leaderboardSnapshot } from "@/lib/store";
@@ -9,7 +10,7 @@ import { leaderboardSnapshot } from "@/lib/store";
 const BOARD_CACHE = "public, max-age=0, s-maxage=5";
 
 async function payload(me?: string) {
-  const { solves, names, totals } = await leaderboardSnapshot();
+  const { solves, names, totals, extreme } = await leaderboardSnapshot();
   const { board, you, players } = buildBoard(solves, names, me);
   // The board compares a time prediction with a real time. Until a human-trained model exists the app
   // predicts solver steps, so there is nothing to compare: say so instead of showing an empty table.
@@ -17,6 +18,7 @@ async function payload(me?: string) {
   return {
     mode: open ? ("open" as const) : ("warming" as const),
     board,
+    extreme: buildExtremeBoard(extreme, names, TOP_N),
     you,
     players,
     totals,
@@ -27,7 +29,10 @@ async function payload(me?: string) {
 export async function GET() {
   try {
     const p = await payload();
-    return Response.json({ mode: p.mode, board: p.board, players: p.players, totals: p.totals, rules: p.rules }, { headers: { "cache-control": BOARD_CACHE } });
+    return Response.json(
+      { mode: p.mode, board: p.board, extreme: p.extreme, players: p.players, totals: p.totals, rules: p.rules },
+      { headers: { "cache-control": BOARD_CACHE } },
+    );
   } catch (err) {
     console.error("[leaderboard] error:", err instanceof Error ? err.message : err);
     return Response.json({ error: "leaderboard unavailable" }, { status: 500, headers: { "cache-control": "no-store" } });

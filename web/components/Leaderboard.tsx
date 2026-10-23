@@ -14,20 +14,30 @@ interface BoardRow {
   avg_error_ms: number;
   solves: number;
 }
+interface ExtremeRow {
+  id: string;
+  rank: number;
+  name: string;
+  best_margin_ms: number;
+  wins: number;
+}
 interface Data {
   mode: "open" | "warming";
   board: BoardRow[];
+  extreme: ExtremeRow[];
   you: { solves: number; needed: number; rank: number | null; avg_error_ms: number | null; nickname: string | null } | null;
   players: number;
   totals: { solves: number; players: number };
   rules: { min_solves: number; top: number; cap_ms: number };
 }
 
+const under = (ms: number) => (ms >= 10_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
 const off = (ms: number) => (ms >= 10_000 ? `${Math.round(ms / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
 
 export default function Leaderboard() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
+  const [tab, setTab] = useState<"unpredictable" | "extreme">("unpredictable");
 
   // Bumping `tick` refetches. The fetch lives in the effect so state is only set from its callbacks.
   const [tick, setTick] = useState(0);
@@ -88,7 +98,7 @@ export default function Leaderboard() {
       next.set(id, { top: li.offsetTop, rank });
     }
     seen.current = next;
-  }, [data?.board]);
+  }, [data?.board, data?.extreme, tab]);
 
   // A nickname typed while offline gets another try whenever the board is opened.
   useEffect(() => {
@@ -114,7 +124,38 @@ export default function Leaderboard() {
         <span className="h-2 w-2 rounded-full bg-green-500 motion-safe:animate-pulse" aria-hidden />
         Live · refreshes every 10 s
       </p>
-      {data.mode === "warming" ? (
+      <div role="tablist" aria-label="Leaderboards" className="flex w-full rounded-xl border border-foreground/20 p-1">
+        {(["unpredictable", "extreme"] as const).map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`min-h-11 flex-1 rounded-lg px-3 py-2 text-sm font-medium ${tab === t ? (t === "extreme" ? "bg-orange-500 text-white" : "bg-foreground text-background") : ""}`}
+          >
+            {t === "extreme" ? "Extreme ⚡" : "Unpredictable"}
+          </button>
+        ))}
+      </div>
+      {tab === "extreme" ? (
+        <section className="flex flex-col gap-2" data-testid="extreme-board">
+          <p className="text-center text-xs opacity-70">Best margin under Yomi&apos;s clock. Switch the game to Extreme and beat it.</p>
+          {data.extreme.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-foreground/25 p-5 text-center text-sm opacity-80">No Extreme wins yet. Be the first.</p>
+          ) : (
+            <ol ref={listRef} className="relative flex flex-col gap-1.5" aria-label="Extreme leaderboard">
+              {data.extreme.map((r) => (
+                <li key={r.id} data-id={r.id} data-rank={r.rank} className="flex min-h-11 items-center gap-3 rounded-xl border border-foreground/15 px-3 py-2 text-sm">
+                  <span className="w-6 font-mono tabular-nums opacity-60">{r.rank}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
+                  <span className="font-mono tabular-nums">beat it by {under(r.best_margin_ms)}</span>
+                  <span className="w-12 text-right font-mono text-xs opacity-50">{r.wins}×</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      ) : data.mode === "warming" ? (
         <section className="flex flex-col gap-3 rounded-2xl border border-foreground/20 p-5 text-sm">
           <p className="text-base font-semibold">Not open yet 👀</p>
           <p>

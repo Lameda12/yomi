@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_LIMIT_MS, MIN_LIMIT_MS } from "@/lib/extreme";
 import { PUZZLE_BY_ID } from "@/lib/puzzles";
 import { replay } from "@/lib/replay";
 import { findStuck } from "@/lib/stuck";
@@ -23,6 +24,10 @@ const Body = z.object({
   started_at_ms: int(1, Number.MAX_SAFE_INTEGER),
   events: z.array(z.tuple([int(0, 30 * 60_000), int(0, 6), int(0, 6), int(1, 49)])).min(1).max(5000),
   played_zip_before: z.boolean().nullable(),
+  // Game mode, and in extreme mode the clock this attempt played against. The limit is client-reported (like the
+  // prediction), so it is only range-checked here; see the TODO about it counting for the Extreme board.
+  mode: z.enum(["regular", "extreme"]).default("regular"),
+  extreme_limit_ms: int(MIN_LIMIT_MS, MAX_LIMIT_MS).nullable().optional(),
   // Only the /demo presenter screen sets this, so volunteer solves can be told apart (and left out of the board).
   source: z.literal("demo").optional(),
   // What the page predicted before the solve. Optional: no model, or an older client.
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
     }
     // Derived on the server so these columns never depend on client maths.
     const { cell, maxPauseMs } = findStuck(b.events);
-    const { prediction, source, ...rest } = b;
+    const { prediction, source, extreme_limit_ms, ...rest } = b;
     const inserted = await insertSolve({
       ...rest,
       grid_size: puzzle.n,
@@ -79,6 +84,7 @@ export async function POST(request: Request) {
       pred_unit: prediction?.unit ?? null,
       model_version: prediction?.model_version ?? null,
       source: source ?? null,
+      extreme_limit_ms: b.mode === "extreme" ? (extreme_limit_ms ?? null) : null,
     });
     // Same solve_id again = a retry whose first response got lost; tell the client it is saved.
     if (!inserted) return Response.json({ ok: true, duplicate: true }, { status: 200 });

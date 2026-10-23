@@ -162,5 +162,53 @@ class ExportTests(unittest.TestCase):
         self.assertTrue(np.isfinite(np.exp(log_ms + data["players"]["player-0"])))
 
 
+
+class ModeTests(unittest.TestCase):
+    """Extreme-mode solves stay out of training; analysis.py compares the two modes on shared puzzles."""
+
+    def frame(self, rows: list[dict]):
+        import pandas as pd
+
+        base = {"completed": True, "solve_ms": 10_000, "player_id": "p", "puzzle_id": PUZZLE_IDS[0]}
+        return pd.DataFrame([{**base, "id": 100 + i, **r} for i, r in enumerate(rows)])
+
+    def test_extreme_solves_are_not_training_data(self) -> None:
+        df = self.frame([{"mode": "regular"}, {"mode": "extreme"}, {}, {"mode": "EXTREME"}])
+        got = solves_from_frame(df, set(PUZZLE_IDS))
+        self.assertEqual(len(got), 2)  # the regular row and the one with no mode value
+
+    def test_missing_mode_column_means_all_regular(self) -> None:
+        df = self.frame([{}, {}, {}])
+        self.assertEqual(len(solves_from_frame(df, set(PUZZLE_IDS))), 3)
+
+    def test_mixed_file_with_nan_modes_keeps_the_unmarked_rows(self) -> None:
+        df = self.frame([{"mode": "regular"}, {"mode": float("nan")}, {"mode": "extreme"}])
+        self.assertEqual(len(solves_from_frame(df, set(PUZZLE_IDS))), 2)
+
+    def test_mode_comparison_uses_only_puzzles_played_in_both_modes(self) -> None:
+        from analysis import mode_comparison
+
+        a, b, c = PUZZLE_IDS[:3]
+        df = self.frame([
+            {"puzzle_id": a, "mode": "regular", "solve_ms": 20_000}, {"puzzle_id": a, "mode": "regular", "solve_ms": 30_000},
+            {"puzzle_id": a, "mode": "extreme", "solve_ms": 10_000},
+            {"puzzle_id": b, "mode": "regular", "solve_ms": 40_000}, {"puzzle_id": b, "mode": "extreme", "solve_ms": 20_000},
+            {"puzzle_id": c, "mode": "regular", "solve_ms": 999_000},  # regular only: left out
+            {"puzzle_id": a, "mode": "extreme", "solve_ms": 1_000, "completed": False},  # timeout: not a time
+        ])
+        out = mode_comparison(df)
+        self.assertEqual(out["n_puzzles"], 2)
+        self.assertEqual((out["n_regular"], out["n_extreme"]), (3, 2))
+        self.assertAlmostEqual(out["regular_s"], 30.0)
+        self.assertAlmostEqual(out["extreme_s"], 15.0)
+
+    def test_mode_comparison_is_none_without_overlap(self) -> None:
+        from analysis import mode_comparison
+
+        self.assertIsNone(mode_comparison(self.frame([{"mode": "regular"}])))
+        self.assertIsNone(mode_comparison(self.frame([{}])))  # no mode column at all
+        self.assertIsNone(mode_comparison(self.frame([]).iloc[0:0]))
+
+
 if __name__ == "__main__":
     unittest.main()

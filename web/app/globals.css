@@ -24,3 +24,15 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Extreme mode: the grid shakes when the clock runs out. Skipped for people who ask for less motion. */
+@keyframes yomi-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(9px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .yomi-shake { animation: yomi-shake 0.45s ease-in-out; }
+}
