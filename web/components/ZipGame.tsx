@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
 import { explainGap, targetCopy } from "@/lib/explain";
+import { finishKind } from "@/lib/finish";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { extremeBase, extremeFactor, extremeLimit } from "@/lib/extreme";
 import { getPlayerId, markStartDone, retryPendingNickname, savedNickname, startDone } from "@/lib/player";
@@ -13,6 +14,7 @@ import { flushQueue, submitSolve } from "@/lib/submit";
 import { markTutorialSeen, tutorialSeen } from "@/lib/tutorial";
 import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
+import FinishEffect, { type FinishEvent } from "./FinishEffect";
 import GameMenu from "./GameMenu";
 import PathLine from "./PathLine";
 import StreakChip from "./StreakChip";
@@ -182,6 +184,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [extremeWins, setExtremeWins] = useState(readWins);
   const [medians, setMedians] = useState<Record<string, { median_ms: number; n: number }> | null>(null);
   const [extremeWin, setExtremeWin] = useState<{ marginMs: number; limitMs: number } | null>(null);
+  const [finish, setFinish] = useState<FinishEvent | null>(null); // the spark burst over the board
   const [bgEvent, setBgEvent] = useState<BgEvent | null>(null); // a win or a timeout, for the background to react to
   const [lockedLimit, setLockedLimit] = useState<number | null>(null); // the running attempt's clock, fixed at the first move
   const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
@@ -274,19 +277,26 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   );
 
   // Extreme mode: the clock ran out. Log the attempt, reset the grid, and offer an instant Retry.
-  const timeUp = useCallback(() => {
-    const a = attempt.current;
-    if (a.t0 === null || a.limitMs === null) return;
-    dragging.current = false;
-    void send(false, a.limitMs);
-    a.path = [startCell(puzzle)];
-    setPath(a.path);
-    setElapsed(a.limitMs);
-    setStatus("timeout");
-    setBgEvent({ kind: "timeout", id: Date.now() });
-    setExtremeWins(0);
-    writeLocal(WINS_KEY, "0");
-  }, [send, puzzle]);
+  // `finishedAt` is set when the grid was completed, but after the clock: a loss that still gets a subtle spark.
+  // When the clock simply ran out there is nothing to celebrate and no effect.
+  const timeUp = useCallback(
+    (finishedAt?: Cell) => {
+      const a = attempt.current;
+      if (a.t0 === null || a.limitMs === null) return;
+      const kind = finishKind(finishedAt ? "late" : "timeout");
+      if (kind && finishedAt) setFinish({ id: Date.now(), kind, at: finishedAt });
+      dragging.current = false;
+      void send(false, a.limitMs);
+      a.path = [startCell(puzzle)];
+      setPath(a.path);
+      setElapsed(a.limitMs);
+      setStatus("timeout");
+      setBgEvent({ kind: "timeout", id: Date.now() });
+      setExtremeWins(0);
+      writeLocal(WINS_KEY, "0");
+    },
+    [send, puzzle],
+  );
 
   // Ask for the predicted stuck cells once the solve is over. Any failure just means no overlay.
   const fetchStuck = useCallback(async (id: string) => {
@@ -339,7 +349,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       if (kind === "extend" && isSolved(n, dots, next)) {
         const ms = now - a.t0;
         if (a.mode === "extreme" && a.limitMs !== null && ms > a.limitMs) {
-          timeUp(); // finished, but after the clock: not a win
+          timeUp(next[next.length - 1]); // finished, but after the clock: not a win
           return;
         }
         if (a.mode === "extreme" && a.limitMs !== null) {
@@ -352,6 +362,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         setElapsed(ms);
         setStatus("solved");
         setBgEvent({ kind: "win", id: Date.now() });
+        setFinish({ id: Date.now(), kind: finishKind("win")!, at: next[next.length - 1] });
         const { cell: stuckCell, maxPauseMs } = findStuck(a.events);
         setStuck(stuckCell);
         // Personal best per grid size and mode, on this device only. The demo screen has no "you", so no best.
@@ -469,6 +480,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setSubmit("none");
     setStuck(null);
     setSolveInfo(null);
+    setFinish(null);
     setPredStuck(null);
     setExtremeWin(null);
     setLockedLimit(null);
@@ -486,6 +498,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     setSubmit("none");
     setStuck(null);
     setSolveInfo(null);
+    setFinish(null);
     setLockedLimit(null);
   }, [puzzle]);
 
@@ -646,6 +659,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         className={`relative aspect-square w-full touch-none select-none overflow-hidden rounded-xl border-2 border-foreground/80 bg-background ${status === "timeout" ? "yomi-shake" : ""}`}
         style={{ WebkitTouchCallout: "none" }}
       >
+        <FinishEffect event={finish} n={n} />
         {status === "timeout" && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80 p-4 text-center" data-testid="timeout">
             <p className="text-2xl font-bold">Time&apos;s up</p>
