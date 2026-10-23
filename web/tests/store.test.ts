@@ -12,7 +12,7 @@ const dir = mkdtempSync(path.join(tmpdir(), "yomi-store-"));
 const file = path.join(dir, "solves.jsonl");
 delete process.env.DATABASE_URL;
 process.env.SOLVES_JSONL = file;
-const { allSolves, dropSnapshot, extremeWins, puzzleMedians, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
+const { allSolves, crowdSolves, dropSnapshot, extremeWins, puzzleMedians, getNicknames, insertSolve, leaderboardSnapshot, predictedSolves, savePlayer, solveTotals, stuckHeat } = await import("../lib/store.ts");
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const solve = (solve_id: string) => ({
@@ -172,6 +172,19 @@ test("puzzleMedians: regular completed solves only, and only with 3+ solves", as
   const m = await puzzleMedians();
   assert.deepEqual(m["zip-median-a"], { median_ms: 20_000, n: 3 });
   assert.equal(m["zip-median-b"], undefined);
+});
+
+test("crowdSolves: completed regular solves, without demo volunteers or extreme runs", async () => {
+  const puzzle = "zip-crowd-q";
+  const mk = (extra: object) => ({ ...solve(randomUUID()), puzzle_id: puzzle, solve_ms: 7_000, ...extra });
+  await insertSolve(mk({}));
+  await insertSolve(mk({ source: "local_import" })); // real play copied in earlier: counts
+  await insertSolve(mk({ source: "demo" })); // projector volunteer: no
+  await insertSolve(mk({ mode: "extreme", extreme_limit_ms: 9_000 })); // played against a clock: no
+  await insertSolve(mk({ completed: false })); // skipped: no
+  const got = (await crowdSolves()).filter((r) => r.puzzle_id === puzzle);
+  assert.equal(got.length, 2);
+  assert.ok(got.every((r) => r.solve_ms === 7_000));
 });
 
 test("players: only 60 brand-new nicknames per minute overall", async () => {

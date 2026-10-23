@@ -4,7 +4,7 @@ import Leaderboard from "@/components/Leaderboard";
 
 export const metadata: Metadata = {
   title: "Most Unpredictable at Dal · Yomi",
-  description: "Who does Yomi get most wrong? Ranked by how far its time guess is from yours.",
+  description: "Whose solve times are hardest to predict? Ranked against the crowd, and against Yomi once it predicts time.",
 };
 
 export default function BoardPage() {
@@ -19,7 +19,6 @@ export default function BoardPage() {
             ← play
           </Link>
         </div>
-        <p className="text-sm opacity-70">Who does Yomi get most wrong? Biggest gap between its time guess and yours wins.</p>
       </header>
       <Leaderboard />
     </main>

@@ -3,6 +3,7 @@ import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { getSql } from "./db.ts";
 import { dedupeBySolveId } from "./dedupe.ts";
+import type { CrowdSolve } from "./crowdBoard.ts";
 import { MIN_CROWD } from "./extreme.ts";
 import type { ExtremeWin } from "./extremeBoard.ts";
 import { nicknameKey } from "./nickname.ts";
@@ -257,6 +258,22 @@ export async function savePlayer(playerId: string, nickname: string | null): Pro
   return result;
 }
 
+// ---------- crowd board data ------------------------------------------------------------------
+
+/** Completed regular-mode solves for the crowd board. Demo volunteers and Extreme solves are left out. */
+export async function crowdSolves(): Promise<CrowdSolve[]> {
+  const sql = getSql();
+  if (sql) {
+    const rows = await sql`
+      select player_id, puzzle_id, solve_ms from solves
+      where completed and mode = 'regular' and source is distinct from 'demo'`;
+    return rows.map((r) => ({ player_id: String(r.player_id), puzzle_id: String(r.puzzle_id), solve_ms: Number(r.solve_ms) }));
+  }
+  return (await readFileRows())
+    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.source !== "demo")
+    .map((r) => ({ player_id: r.player_id, puzzle_id: r.puzzle_id, solve_ms: r.solve_ms }));
+}
+
 // ---------- extreme mode data -----------------------------------------------------------------
 
 /** Extreme wins: completed under the clock, live-site solves only. margin = limit - solve time (always > 0). */
@@ -308,6 +325,7 @@ export interface LeaderboardSnapshot {
   names: Map<string, string>; // every nickname, so "you" never needs its own query
   totals: { solves: number; players: number };
   extreme: ExtremeWin[];
+  crowd: CrowdSolve[];
 }
 
 const SNAPSHOT_MS = 5_000;
@@ -333,8 +351,10 @@ export async function leaderboardSnapshot(): Promise<LeaderboardSnapshot> {
   if (snapshot && Date.now() - snapshot.at < SNAPSHOT_MS) return snapshot.data;
   loading ??= (async () => {
     try {
-      const [solves, names, totals, extreme] = await Promise.all([predictedSolves(), allNicknames(), solveTotals(), extremeWins()]);
-      const data = { solves, names, totals, extreme };
+      const [solves, names, totals, extreme, crowd] = await Promise.all([
+        predictedSolves(), allNicknames(), solveTotals(), extremeWins(), crowdSolves(),
+      ]);
+      const data = { solves, names, totals, extreme, crowd };
       snapshot = { at: Date.now(), data };
       return data;
     } finally {
