@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   EXCLUDED_ROW_ID_MAX, MIN_ATTEMPTS, MIN_HEAT_SOLVES, MIN_HUMAN_SOLVES, MIN_PLAYERS,
-  dataStatus, isTrainable, liveEvaluation, median, puzzleHeat,
+  dataStatus, feltVsModel, isTrainable, liveEvaluation, median, puzzleHeat,
 } from "../lib/insights.ts";
 import type { SolveRow } from "../lib/store.ts";
 
@@ -117,4 +117,32 @@ test("puzzleHeat: counts finished Regular solves with a recorded pause, and is r
   const more = [...rows, ...Array.from({ length: MIN_HEAT_SOLVES }, () => row({ stuck_cell: [1, 2] }))];
   assert.equal(puzzleHeat(more, "zip-5x5-01").ready, true);
   assert.ok(!JSON.stringify(h).includes('"a"') && !JSON.stringify(h).includes('"b"'), "no player id in the result");
+});
+
+test("feltVsModel: needs enough players and answers, and returns no rows until then", () => {
+  const scores = { "zip-a": 1, "zip-b": 2, "zip-c": 3 };
+  const few = [row({ puzzle_id: "zip-a", perceived_difficulty: "easy" }), row({ puzzle_id: "zip-b", perceived_difficulty: "hard" })];
+  const f = feltVsModel(few, scores);
+  assert.equal(f.ready, false);
+  assert.deepEqual(f.rows, []);
+  assert.equal(f.answers, 2);
+  assert.match(f.missing.join(" "), /more players/);
+});
+
+test("feltVsModel: percentile of the puzzles given each answer, first tries only, ignoring skipped answers and sprints", () => {
+  const scores = { "zip-a": 10, "zip-b": 20, "zip-c": 30 }; // a easiest, c hardest
+  const rows = [];
+  for (let p = 0; p < 6; p++) {
+    rows.push(row({ player_id: `p${p}`, puzzle_id: "zip-a", perceived_difficulty: "easy" }));
+    rows.push(row({ player_id: `p${p}`, puzzle_id: "zip-c", perceived_difficulty: "hard" }));
+    rows.push(row({ player_id: `p${p}`, puzzle_id: "zip-b", perceived_difficulty: "medium" }));
+  }
+  rows.push(row({ player_id: "p0", puzzle_id: "zip-a", perceived_difficulty: "hard" })); // a second try: ignored
+  rows.push(row({ player_id: "p1", puzzle_id: "zip-c", perceived_difficulty: null }));
+  rows.push(row({ player_id: "p9", puzzle_id: "zip-c", perceived_difficulty: "easy", mode: "extreme" }));
+  rows.push(row({ player_id: "p9", puzzle_id: "zip-unknown", perceived_difficulty: "easy" }));
+  const f = feltVsModel(rows, scores, 5, 18);
+  assert.equal(f.ready, true);
+  assert.deepEqual(f.rows.map((r) => [r.rating, r.n, r.meanPercentile]), [["easy", 6, 0], ["medium", 6, 50], ["hard", 6, 100]]);
+  assert.ok(!JSON.stringify(f).includes('"p0"'));
 });

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { test } from "node:test";
-import { API_PLAYER_FIELDS, API_SOLVE_FIELDS, DEVICE, GROUPS, LIMITS, NOT_STORED, PLAYERS, SOLVES, USES } from "../lib/stored-data.ts";
+import { API_FEEDBACK_FIELDS, API_PLAYER_FIELDS, API_SOLVE_FIELDS, DEVICE, GROUPS, LIMITS, NOT_STORED, PLAYERS, SOLVES, USES } from "../lib/stored-data.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (rel: string) => readFileSync(new URL(rel, root), "utf8");
@@ -56,9 +56,24 @@ test("the solves API accepts exactly the fields the page lists, and nothing deri
   assert.deepEqual(keys.slice(), [...API_SOLVE_FIELDS].sort()); // (slice: assert.deepEqual would otherwise narrow the type of `keys`)
   // sent items are accepted fields (the prediction object carries three columns); derived and server items never are
   const viaPrediction = ["pred_value", "pred_unit", "model_version"];
+  const viaFeedback = ["perceived_difficulty"]; // sent later, by its own route (tested below)
   for (const i of SOLVES) {
-    if (i.origin === "sent") assert.ok(keys.includes(i.column) || viaPrediction.includes(i.column), `${i.column} is sent`);
+    if (i.origin === "sent") assert.ok(keys.includes(i.column) || viaPrediction.includes(i.column) || viaFeedback.includes(i.column), `${i.column} is sent`);
     else assert.ok(!keys.includes(i.column), `${i.column} must not be accepted from the browser`);
+  }
+});
+
+test("the feedback API accepts exactly the fields the page lists, and the answer never reaches training", () => {
+  const src = read("app/api/feedback/route.ts");
+  const line = src.match(/const Body = z\.object\(\{([^}]*)\}\)/)?.[1] ?? "";
+  assert.deepEqual([...line.matchAll(/(\w+): z\./g)].map((m) => m[1]).sort(), [...API_FEEDBACK_FIELDS].sort());
+  assert.ok(!/export (async )?function GET/.test(src));
+  const solves = read("app/api/solves/route.ts");
+  assert.ok(!solves.includes("perceived_difficulty") && !solves.includes("rating"), "the solve upload does not accept the answer");
+  // The Python pipeline must not mention the column at all.
+  const ml = new URL("../../ml/", import.meta.url);
+  for (const f of readdirSync(ml).filter((n) => n.endsWith(".py") && !n.startsWith("test_"))) {
+    assert.ok(!readFileSync(new URL(f, ml), "utf8").includes("perceived_difficulty"), `ml/${f} must not use perceived_difficulty`);
   }
 });
 

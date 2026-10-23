@@ -41,6 +41,7 @@ export const SOLVES: StoredItem[] = [
   { column: "started_at_ms", group: "play", origin: "sent", what: "The clock time of your first move (milliseconds since 1970). This reveals roughly when you played.", why: "Used with your solve time to work out when the attempt ended." },
   { column: "ended_at_ms", group: "play", origin: "derived", what: "When the attempt ended: your first-move time plus the solve time the server worked out.", why: "Completes the record of the attempt." },
   { column: "mode", group: "play", origin: "sent", what: "regular or extreme (the sprint).", why: "Extreme runs are kept separate and are not used to train the model." },
+  { column: "perceived_difficulty", group: "play", origin: "sent", what: "Your optional answer to \"How difficult did that puzzle feel?\": easy, medium or hard. It is empty if you skipped it, and it is only asked after a finished Regular solve.", why: "To see whether puzzles that feel hard to people are the ones the model expects to be hard. Analysis only: it is never used to train the model." },
   { column: "pred_value", group: "guess", origin: "sent", what: "The number Yomi predicted before you played.", why: "Lets you and the stats pages compare the guess with what happened. Not used to train the model." },
   { column: "pred_unit", group: "guess", origin: "sent", what: "Whether that number is a time or a count of solver steps (the model is still on solver steps).", why: "So a step count is never mistaken for a time." },
   { column: "model_version", group: "guess", origin: "sent", what: "Which version of the model made the guess.", why: "To compare model versions fairly." },
@@ -94,6 +95,7 @@ export const NOT_STORED: { item: string; detail: string }[] = [
 export const USES: string[] = [
   "To train the model that predicts how hard a puzzle is and where people get stuck. Only finished Regular solves are used, including the projector-screen volunteers and the owner's early local solves, who are real people too. Extreme runs and a few early test rows are left out. Training is a manual batch job, run by a person from time to time. The model does not change while you play, and your solve is not used until the next time it is run.",
   "To show you your own attempts on the Your attempts page: they are looked up by your anonymous ID, and you can download them. Nobody else's attempts are shown there.",
+  "To compare how hard puzzles feel with how hard the model thinks they are, if you answered the optional \"How difficult did that puzzle feel?\" question. It is shown to you on Your attempts and, once enough people have answered, as an exploratory aggregate. It is never used to train the model.",
   "For the What the data shows page: totals, where people get stuck, and, once there is enough data, how the model's guesses compare with what happened. These are aggregates, with no IDs or nicknames.",
   "To build a result page when you share a link: your time, backtracks, mode and your nickname (or an anonymous label like Anon 3f2a). It never shows your random ID or your move log.",
 ];
@@ -111,3 +113,4 @@ export const API_SOLVE_FIELDS = [
   "solve_id", "player_id", "puzzle_id", "grid_size", "device", "started_at_ms", "events", "played_zip_before", "mode", "extreme_limit_ms", "source", "prediction",
 ] as const;
 export const API_PLAYER_FIELDS = ["player_id", "nickname"] as const;
+export const API_FEEDBACK_FIELDS = ["solve_id", "player_id", "rating"] as const;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { peekPlayerId } from "@/lib/player";
 import { exportJson, fmtClock, guessLine, sizeSummaries, tryNumbers, vsGuess, type Attempt, type Mine } from "@/lib/mine";
+import { RATING_LABEL } from "@/lib/difficulty";
 import PathReplay from "./PathReplay";
 
 type State = { kind: "loading" } | { kind: "none" } | { kind: "error" } | { kind: "ok"; mine: Mine };
@@ -132,6 +133,7 @@ function Loaded({ mine }: { mine: Mine }) {
                   )}
                   <span className="text-xs opacity-60"> · try {tries.get(a)}{(tries.get(a) ?? 1) > 1 ? " at this puzzle" : ""}</span>
                 </p>
+                {a.perceived_difficulty && <p className="mt-1 text-xs opacity-80">You said it felt: {RATING_LABEL[a.perceived_difficulty].toLowerCase()}.</p>}
                 {line && <p className="mt-1 text-xs opacity-80">{line}</p>}
                 {puzzle && a.events.length > 1 && (
                   <>

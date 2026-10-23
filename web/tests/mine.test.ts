@@ -5,7 +5,7 @@ import { replay, type ReplayStep } from "../lib/replay.ts";
 
 const a = (o: Partial<Attempt> = {}): Attempt => ({
   solve_id: "s", created_at: "2026-10-23T10:00:00Z", puzzle_id: "zip-5x5-01", puzzle_number: 1, grid_size: 5, mode: "regular", completed: true, solve_ms: 30_000,
-  backtracks: 0, max_pause_ms: null, stuck_cell: null, pred_value: null, pred_unit: null, model_version: null, events: [], ...o,
+  backtracks: 0, max_pause_ms: null, stuck_cell: null, pred_value: null, pred_unit: null, model_version: null, perceived_difficulty: null, events: [], ...o,
 });
 
 test("sizeSummaries keeps board sizes apart and ignores sprint runs and unfinished attempts", () => {

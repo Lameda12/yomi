@@ -26,6 +26,7 @@ function toAttempt(r: SolveRow): Attempt {
     pred_value: r.pred_value ?? null,
     pred_unit: r.pred_unit ?? null,
     model_version: r.model_version ?? null,
+    perceived_difficulty: r.perceived_difficulty ?? null,
     events: r.events,
   };
 }

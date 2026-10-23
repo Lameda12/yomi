@@ -20,6 +20,7 @@ import { isSolved, planMove, type Cell, type Dot } from "@/lib/zip";
 import GameBackground, { type BgEvent } from "./GameBackground";
 import FinishEffect, { type FinishEvent } from "./FinishEffect";
 import GameMenu from "./GameMenu";
+import DifficultyRating from "./DifficultyRating";
 import PathLine from "./PathLine";
 import { SprintOver, SprintReady, SprintRules } from "./SprintPanels";
 import StreakChip from "./StreakChip";
@@ -907,6 +908,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               </p>
             )}
             {!demo && (<>
+            {submit === "saved" && solveInfo?.mode === "regular" && <DifficultyRating key={solveInfo.solveId} solveId={solveInfo.solveId} />}
             <div className="flex w-full flex-col items-center gap-1">
               <button
                 onClick={shareResult}

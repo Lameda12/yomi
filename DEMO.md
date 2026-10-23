@@ -37,6 +37,8 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - **After the solve**, with a human-time model, the result card leads with the percent as a big number ("40% faster than predicted") and the explanation under it. With the solver-effort model there is no percentage; the card keeps a plain line saying the guess is still in solver steps and needs a retrain on 30+ real solves. The explanation is one template line, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the guess is not a time yet.
 - **Personal best** per grid size (Regular only), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size just shows the time to beat. The demo screen has no personal best.
 
+- **Optional rating:** once a Regular solve is saved, the card asks "How difficult did that puzzle feel? (optional)" with Easy, Medium, Hard. Skipping is just tapping Next; it is never asked again or during play, and not on the demo screen or in sprint runs. The answer is analysis only: **/stats** sets answers against the model's difficulty ranking (only with 5+ players and 20+ answers, labelled exploratory) and **/you** shows your own. The training pipeline never reads it, and tests pin that.
+
 ## The finish (regular screen)
 
 - The path draws smoothly: the line grows to each new cell and eases back when you undo or reset.

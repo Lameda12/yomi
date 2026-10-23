@@ -1,8 +1,9 @@
 import "server-only";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { getSql } from "./db.ts";
 import { dedupeBySolveId } from "./dedupe.ts";
+import type { Rating } from "./difficulty.ts";
 import { MIN_CROWD } from "./extreme.ts";
 import { anonName } from "./anon.ts";
 import { nicknameKey } from "./nickname.ts";
@@ -35,6 +36,7 @@ export type SolveRow = {
   source?: string | null; // null = played on the live site; 'local_import' = copied in from the owner's machine
   mode?: "regular" | "extreme"; // missing on older rows = regular
   extreme_limit_ms?: number | null; // the clock this solve played against (extreme mode only)
+  perceived_difficulty?: Rating | null; // the optional post-solve answer; analysis only, never a training input
 };
 
 export type NewSolve = Omit<SolveRow, "id" | "created_at" | "solve_id"> & { solve_id: string };
@@ -375,4 +377,45 @@ export async function playerSolves(playerId: string, limit = 100): Promise<{ row
   }
   const mine = (await readFileRows()).filter((r) => r.player_id === playerId).sort((a, b) => b.id - a.id);
   return { total: mine.length, rows: mine.slice(0, limit) };
+}
+
+// ---------- perceived difficulty (optional, analysis only) ------------------------------------------
+
+/**
+ * Record how hard the player said a finished Regular solve felt. The row must be this player's own and finished, and
+ * the player can change their answer. Returns false when there is no such row (so nothing was written).
+ */
+export async function setPerceivedDifficulty(solveId: string, playerId: string, rating: Rating): Promise<boolean> {
+  const sql = getSql();
+  if (sql) {
+    const rows = await sql`
+      update solves set perceived_difficulty = ${rating}
+      where solve_id = ${solveId} and player_id = ${playerId} and completed and mode = 'regular'
+      returning id`;
+    return rows.length > 0;
+  }
+  // File mode (local dev): small file, so rewrite it with the one line changed.
+  let text: string;
+  try {
+    text = await readFile(SOLVES_JSONL, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+  let found = false;
+  const lines = text.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    try {
+      const r = JSON.parse(line) as SolveRow;
+      if (r.solve_id === solveId && r.player_id === playerId && r.completed && (r.mode ?? "regular") === "regular") {
+        found = true;
+        return JSON.stringify({ ...r, perceived_difficulty: rating });
+      }
+    } catch {
+      // A half-written line: keep it as it is.
+    }
+    return line;
+  });
+  if (found) await writeFile(SOLVES_JSONL, lines.join("\n"));
+  return found;
 }

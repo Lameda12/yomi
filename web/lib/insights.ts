@@ -1,6 +1,8 @@
 // Aggregate insights for the learn and stats pages. Pure functions over stored rows: no storage, no player ids in
 // anything they return. Every number here is computed from rows that exist; when there are too few rows the functions
 // say what is missing instead of returning a chart.
+import type { Rating } from "./difficulty.ts";
+import { RATINGS } from "./difficulty.ts";
 import type { SolveRow } from "./store.ts";
 
 // What the training script needs before it will fit human solve time (ml/train_time.py MIN_HUMAN_SOLVES).
@@ -151,4 +153,46 @@ export function puzzleHeat(rows: Rows, puzzleId: string): PuzzleHeat {
     cells: [...counts.values()],
     ready: mine.length >= MIN_HEAT_SOLVES,
   };
+}
+
+// ---------- how hard it felt against how hard the model thinks it is ----------------------------------
+
+export interface FeltVsModel {
+  answers: number; // first tries with an answer
+  players: number;
+  ready: boolean;
+  missing: string[];
+  rows: { rating: Rating; n: number; meanPercentile: number }[]; // only when ready
+}
+
+/**
+ * For each answer to "how difficult did that feel?", how hard the model rates the puzzles people gave it, as a percentile
+ * among all puzzles (0 = the model's easiest, 100 = its hardest). `scores` is the model's number per puzzle, higher meaning
+ * harder; it does not matter whether that number is solver steps or time. Exploratory: an answer is given after the solve
+ * and is shaped by how the solve went. First tries only.
+ */
+export function feltVsModel(rows: Rows, scores: Readonly<Record<string, number>>, minPlayers = MIN_PLAYERS, minAnswers = MIN_ATTEMPTS): FeltVsModel {
+  const ids = Object.keys(scores);
+  const seen = new Set<string>();
+  const answered = rows
+    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.perceived_difficulty && RATINGS.includes(r.perceived_difficulty) && r.puzzle_id in scores)
+    .sort((a, b) => a.id - b.id)
+    .filter((r) => {
+      const k = `${r.player_id}|${r.puzzle_id}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  const players = new Set(answered.map((r) => r.player_id)).size;
+  const missing: string[] = [];
+  if (players < minPlayers) missing.push(`${minPlayers - players} more ${minPlayers - players === 1 ? "player" : "players"} (${players} so far)`);
+  if (answered.length < minAnswers) missing.push(`${minAnswers - answered.length} more answers (${answered.length} so far)`);
+  const out: FeltVsModel = { answers: answered.length, players, ready: missing.length === 0, missing, rows: [] };
+  if (!out.ready || ids.length < 2) return { ...out, ready: out.ready && ids.length >= 2, rows: [] };
+  const percentile = (id: string) => (100 * ids.filter((o) => scores[o] < scores[id]).length) / (ids.length - 1);
+  for (const rating of RATINGS) {
+    const rs = answered.filter((r) => r.perceived_difficulty === rating);
+    if (rs.length > 0) out.rows.push({ rating, n: rs.length, meanPercentile: rs.reduce((a, r) => a + percentile(r.puzzle_id), 0) / rs.length });
+  }
+  return out;
 }

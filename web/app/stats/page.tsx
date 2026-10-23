@@ -3,8 +3,9 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Heatmap, PredictionScatter } from "@/components/StatsParts";
-import { MIN_ATTEMPTS, MIN_HEAT_SOLVES, MIN_PLAYERS, dataStatus, liveEvaluation, puzzleHeat } from "@/lib/insights";
-import { loadModel } from "@/lib/model";
+import { RATING_LABEL } from "@/lib/difficulty";
+import { MIN_ATTEMPTS, MIN_HEAT_SOLVES, MIN_PLAYERS, dataStatus, feltVsModel, liveEvaluation, puzzleHeat } from "@/lib/insights";
+import { loadModel, loadTimeInfo } from "@/lib/model";
 import { PUZZLES } from "@/lib/puzzles";
 import { allSolves, storageLabel } from "@/lib/store";
 
@@ -52,6 +53,8 @@ async function Stats() {
   const ready = heats.filter((h) => h.heat.ready);
   const early = heats.filter((h) => h.heat.n > 0 && !h.heat.ready);
   const ev = model ? liveEvaluation(rows, model.version) : null;
+  const scores = loadTimeInfo()?.logByPuzzle ?? null;
+  const felt = scores ? feltVsModel(rows, scores) : null;
 
   return (
     <>
@@ -182,6 +185,44 @@ async function Stats() {
           </>
         )}
       </section>
+
+      {felt && (
+        <section className="flex flex-col gap-3" aria-labelledby="felt">
+          <h2 id="felt" className="text-lg font-semibold">
+            Does a hard puzzle feel hard?
+          </h2>
+          <p className="text-sm">
+            After a finished solve, Yomi can ask &ldquo;How difficult did that puzzle feel?&rdquo; (easy, medium or hard). Here, each answer is set against how hard the model
+            thinks the puzzles are. This is exploratory, and it does not train the model.
+          </p>
+          {felt.ready ? (
+            <>
+              <ul className="flex flex-col gap-3" aria-label="Average model difficulty of the puzzles given each answer">
+                {felt.rows.map((r) => (
+                  <li key={r.rating} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="font-medium">Felt {RATING_LABEL[r.rating].toLowerCase()}</span>
+                      <span className="text-xs opacity-70">{r.n} answers</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-foreground/10" aria-hidden>
+                      <div className="h-full rounded-full bg-orange-500" style={{ width: `${Math.max(2, Math.round(r.meanPercentile))}%` }} />
+                    </div>
+                    <p className="text-xs opacity-70">On average these puzzles sit at the {Math.round(r.meanPercentile)}th percentile of the model&apos;s difficulty ranking (0 = easiest it knows, 100 = hardest).</p>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs opacity-80">
+                Based on {felt.answers} first tries from {felt.players} players. An answer is given after the solve, so it is shaped by how that solve went, and few players can
+                make this look more or less aligned than it is.
+              </p>
+            </>
+          ) : (
+            <p className="rounded-xl border border-dashed border-foreground/25 p-4 text-sm">
+              <b>Not enough answers yet.</b> {felt.answers} so far from {felt.players} {felt.players === 1 ? "player" : "players"}. This appears with {felt.missing.join(" and ")}.
+            </p>
+          )}
+        </section>
+      )}
     </>
   );
 }

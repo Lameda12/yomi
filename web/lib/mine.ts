@@ -1,5 +1,6 @@
 // "Your attempts": what one player's own stored rows say. Pure functions, safe to import in the browser. Everything
 // here is about the caller's own data, so there is no comparison with other players and no aggregate.
+import type { Rating } from "./difficulty.ts";
 import { median } from "./insights.ts";
 import type { GameEvent } from "./stuck.ts";
 
@@ -18,6 +19,7 @@ export interface Attempt {
   pred_value: number | null;
   pred_unit: "ms" | "solver_steps" | null;
   model_version: string | null;
+  perceived_difficulty: Rating | null; // your own optional answer
   events: GameEvent[];
 }
 
