@@ -21,11 +21,18 @@ export const MIN_HEAT_SOLVES = 5; // finished solves of one puzzle before its st
 
 type Rows = readonly SolveRow[];
 
+/**
+ * The owner's early test plays: marked source = 'test' (migration 007), or, until 007 is applied, row ids 1 to 8.
+ * Training, the page counts and the crowd median all leave these out. Demo and local_import rows are real people and stay.
+ */
+export function isEarlyTestRow(r: { id: number; source?: string | null }): boolean {
+  return r.source === "test" || (r.id >= 1 && r.id <= EXCLUDED_ROW_ID_MAX);
+}
+
 /** The training script's filter: finished, timed, Regular mode, a puzzle we know, and not one of the early test rows (by id, or marked source = 'test'). */
 export function isTrainable(r: SolveRow, puzzleIds: ReadonlySet<string>): boolean {
   if (!r.completed || !Number.isFinite(r.solve_ms) || r.solve_ms <= 0) return false;
-  if (r.id >= 1 && r.id <= EXCLUDED_ROW_ID_MAX) return false;
-  if (r.source === "test") return false;
+  if (isEarlyTestRow(r)) return false;
   if (!puzzleIds.has(r.puzzle_id)) return false;
   return (r.mode ?? "regular") === "regular";
 }

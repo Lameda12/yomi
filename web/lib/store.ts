@@ -4,6 +4,7 @@ import path from "node:path";
 import { getSql } from "./db.ts";
 import { dedupeBySolveId } from "./dedupe.ts";
 import { MIN_CROWD } from "./extreme.ts";
+import { EXCLUDED_ROW_ID_MAX, isEarlyTestRow } from "./insights.ts";
 import { anonName } from "./anon.ts";
 import { nicknameKey } from "./nickname.ts";
 import { isShareId, toShared, type SharedSolve } from "./share.ts";
@@ -269,7 +270,8 @@ export const savePlayer = savePlayerInner;
 
 /**
  * Median solve time per puzzle over completed regular-mode solves (Extreme solves are left out so the clock does not
- * feed on itself). Only puzzles with MIN_CROWD+ solves are returned.
+ * feed on itself). The owner's early test plays are left out too, from the median and from the count: rows marked
+ * source = 'test' (migration 007) and, until 007 is applied, ids 1 to 8. Only puzzles with MIN_CROWD+ solves are returned.
  */
 export async function puzzleMedians(): Promise<Record<string, { median_ms: number; n: number }>> {
   const sql = getSql();
@@ -277,13 +279,14 @@ export async function puzzleMedians(): Promise<Record<string, { median_ms: numbe
   if (sql) {
     const rows = await sql`
       select puzzle_id, percentile_cont(0.5) within group (order by solve_ms) as median_ms, count(*)::int as n
-      from solves where completed and mode = 'regular' group by puzzle_id having count(*) >= ${MIN_CROWD}`;
+      from solves where completed and mode = 'regular' and source is distinct from 'test' and id > ${EXCLUDED_ROW_ID_MAX}
+      group by puzzle_id having count(*) >= ${MIN_CROWD}`;
     for (const r of rows) out[String(r.puzzle_id)] = { median_ms: Math.round(Number(r.median_ms)), n: Number(r.n) };
     return out;
   }
   const by = new Map<string, number[]>();
   for (const r of await readFileRows()) {
-    if (!r.completed || (r.mode ?? "regular") !== "regular") continue;
+    if (!r.completed || (r.mode ?? "regular") !== "regular" || isEarlyTestRow(r)) continue;
     by.set(r.puzzle_id, [...(by.get(r.puzzle_id) ?? []), r.solve_ms]);
   }
   for (const [id, times] of by) {
