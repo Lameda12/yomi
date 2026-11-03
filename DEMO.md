@@ -14,7 +14,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 **Findings so far (20s).** In Lichess, solution length vs rating gives Spearman ρ = **+0.55**. That's our strongest signal, and its labels come from **real humans**. Queens (ρ = +0.84 for grid size) and Sudoku look strong too, but their labels come from **solvers**, so they measure algorithm effort, not human difficulty. That's exactly why Yomi needs its own human solve data.
 
-**Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show a prediction before each puzzle. Today it is the solver-effort stand-in, so the game says "how hard it'll be" in solver steps, not a time. It switches to "predicted: 42s, can you beat it?" once the human-time model has 30+ real solves.
+**Sprint 2 (10s).** Collect 50+ real Zip solves from playtesters, fit a first solve-time model on puzzle features, and show a prediction before each puzzle. Today it is the solver-effort stand-in, so the game says "how hard it'll be" in solver steps, not a time. It switches to "predicted: 42s, can you beat it?" once the human-time model has 15+ real solves.
 
 ## First run (what a new visitor sees)
 
@@ -34,7 +34,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 ## The learning pages
 
-- **/learn (How Yomi learns):** the four-step loop with live counts (usable solves against the 30-solve rule), what the current model is (today: solver steps, a stand-in, so no one's solving time has shaped it), the six features on puzzle 1, a bar chart of how far each feature moves the guess across all the puzzles (the 30 originals and the 120 dailies), a "what it does not know yet" list, and the version table. Say out loud that the model is retrained by hand in batches and does not change while people play, and that no version has a held-out score yet.
+- **/learn (How Yomi learns):** the four-step loop with live counts (usable solves against the 15-solve rule), what the current model is (today: solver steps, a stand-in, so no one's solving time has shaped it), the six features on puzzle 1, a bar chart of how far each feature moves the guess across all the puzzles (the 30 originals and the 120 dailies), a "what it does not know yet" list, and the version table. Say out loud that the model is retrained by hand in batches and does not change while people play, and that no version has a held-out score yet.
 - **/stats (What the data shows):** heatmaps only for puzzles with 5+ finished solves. The guesses-vs-reality chart only appears for a model that predicts time, with 5+ players and 20+ first tries; today it says "nothing to compare yet". Never present an empty state as a result.
 - **/you (Your attempts):** your own attempts by board size, a replay of each path, your data as a download. Looked up by the anonymous ID in your browser. No ranking, no comparison with anyone.
 
@@ -43,7 +43,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 - **Before the solve** the prediction sits in a highlighted box above the grid. With a human-time model it reads "Target: beat 0:42". While the model is the solver-effort stand-in it reads "Yomi's read: on the easier side. Can you make it look easy?" with a note that the number is solver steps for a computer, not a time. Say that out loud.
 - **Crowd median.** While the model is the solver-effort stand-in, a puzzle with 3 or more finished Regular solves shows "Crowd median: 0:38 (5 solves). Beat it." instead of the solver-steps read. It is a plain median of what people took, not a model prediction, and the count is solves, not players. A puzzle without enough solves keeps the solver-steps read; no time is invented. The target is locked at the first move, and it is saved with the solve as `model_version = crowd-median`. A model that predicts time wins over the crowd median.
 - **Above the grid** one line states the objective: "Connect 1 to N in order and fill every cell".
-- **After the solve**, with a human-time model, the result card leads with the percent as a big number ("40% faster than predicted") and the explanation under it. With the solver-effort model there is no percentage; the card keeps a plain line saying the guess is still in solver steps and needs a retrain on 30+ real solves. The explanation is one template line, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the guess is not a time yet.
+- **After the solve**, with a human-time model, the result card leads with the percent as a big number ("40% faster than predicted") and the explanation under it. With the solver-effort model there is no percentage; the card keeps a plain line saying the guess is still in solver steps and needs a retrain on 15+ real solves. The explanation is one template line, from data already on the device: how much faster or slower than the guess, backtracks, the longest pause and which dot it was near, and whether it was the player's first solve. No LLM call. With the solver-effort model it never claims a time gap; it says the guess is not a time yet.
 - **Personal best** per grid size (Regular only), kept on the device only. A faster solve shows a "New best" badge; the first solve of a size just shows the time to beat. The demo screen has no personal best.
 
 ## The finish (regular screen)
@@ -81,12 +81,12 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 
 ## Future work
 
-- **Model-tuned daily difficulty** is not built: the dailies are a fixed pool in a fixed order. It only makes sense once a model trained on human solve times exists (30+ completed solves from 2+ players; today there are fewer). Until then the model predicts solver effort, which is not what a player finds hard.
+- **Model-tuned daily difficulty** is not built: the dailies are a fixed pool in a fixed order. It only makes sense once a model trained on human solve times exists (15+ completed solves from 2+ players; today there are fewer). Until then the model predicts solver effort, which is not what a player finds hard.
 
 ## If asked
 
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.
-- *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /learn shows the live count against the 30-solve rule.
+- *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /learn shows the live count against the 15-solve rule for the time model (the stuck-point model needs 30).
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
 - *Why would anyone come back?* A daily puzzle and a streak for solving it: a small 🔥 counter on the main screen and the result card, plus a 7-day strip and a countdown to the next Yomi on the daily result. The streak is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
 

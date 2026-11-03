@@ -47,7 +47,7 @@ export const SOLVES: StoredItem[] = [
   { column: "id", group: "extra", origin: "server", what: "A row number.", why: "Keeps rows in order." },
   { column: "created_at", group: "extra", origin: "server", what: "The date and time the server saved the row.", why: "Used for the hourly limit on saved solves and for stats over time." },
   { column: "played_zip_before", group: "extra", origin: "sent", what: "Whether you have played a similar puzzle before. The game does not ask this right now, so it is empty.", why: "Reserved for checking whether experience changes solve times." },
-  { column: "source", group: "extra", origin: "sent", what: "Marks special rows: demo for the presenter screen's volunteers, local_import for the owner's own early test solves. Empty for normal play.", why: "So those rows can be told apart. Training does not leave them out, because they are real people too." },
+  { column: "source", group: "extra", origin: "sent", what: "Marks special rows: demo for the presenter screen's volunteers, local_import for the owner's own early solves copied in later, test for the owner's first test plays. Empty for normal play.", why: "So those rows can be told apart. Training keeps demo and local_import rows, because they are real people too, and leaves out the test rows." },
   { column: "extreme_limit_ms", group: "extra", origin: "sent", what: "Used only by the old Extreme mode, which had a clock per puzzle. The sprint leaves it empty.", why: "Kept so older rows still make sense." },
 ];
 

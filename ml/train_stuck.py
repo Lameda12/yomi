@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 from ml.features import CELL_FEATURES, cell_features  # noqa: E402
 from ml.train_time import EXCLUDED_ROW_IDS, human_records  # noqa: E402
 
-MIN_STUCK_SOLVES = 30  # same floor as the time model's human-solve rule
+MIN_STUCK_SOLVES = 30  # its own floor: a logistic fit over every cell needs more solves than the time model's MIN_HUMAN_SOLVES
 DEFAULT_L2 = 1.0  # penalty on standardized coefficients; not tuned
 TOP_K = 3
 

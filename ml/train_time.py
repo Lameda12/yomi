@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 from ml.features import PUZZLE_FEATURES, load_puzzles, puzzle_features  # noqa: E402
 
-MIN_HUMAN_SOLVES = 30  # below this, fit on solver_steps as a stand-in label
+MIN_HUMAN_SOLVES = 15  # time model only: below this, fit on solver_steps as a stand-in label (the stuck model keeps its own, higher floor)
 SHRINK_K = 3  # player offset is shrunk by n / (n + SHRINK_K)
 DEFAULT_ALPHA = 1.0  # ridge penalty on standardized features; not tuned (evaluation is task 6)
 LABEL_HUMAN = "human_time"
@@ -36,6 +36,9 @@ LABEL_SOLVER = "solver_effort"
 # Rows 1-8 of data/solves.jsonl (ids 1-8, 2026-10-15 05:18-05:21 UTC): the owner's own test
 # plays before the solve_id dedupe landed. Kept in the data, excluded from training. Rows are
 # not deleted, so this list can be emptied later without losing anything.
+# Migration web/migrations/007_test_rows.sql marks the same rows with source = 'test', which
+# human_records drops. Once 007 has been applied in Neon this list can go. It stays until then,
+# and for data/solves.jsonl, where the rows have no source marker.
 EXCLUDED_ROW_IDS = frozenset(str(i) for i in range(1, 9))
 
 # One completed human solve: (player_id, puzzle_id, solve_ms).
@@ -97,9 +100,10 @@ def human_records(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] 
                   exclude_ids: Iterable[str] = EXCLUDED_ROW_IDS) -> list[dict[str, Any]]:
     """Rows of completed solves from real humans, as dicts. `df` is what analysis.load_solves returns.
 
-    The schema has no "test row" marker, so test and fake rows are dropped by player id
-    (`exclude_players`) or by row id (`exclude_ids`, see EXCLUDED_ROW_IDS). Delete fake rows
-    from the database after a test, as CLAUDE.md says.
+    Rows with source = 'test' (migration 007: the early test plays) are dropped. Rows marked
+    'demo' or 'local_import' are real people and stay. Other test and fake rows are dropped by
+    player id (`exclude_players`) or by row id (`exclude_ids`, see EXCLUDED_ROW_IDS). Delete fake
+    rows from the database after a test, as CLAUDE.md says.
     Rows that cannot be a real timed solve (no time, unknown puzzle) are dropped too, and so are
     mode = 'extreme' solves: models train on regular play only.
     """
@@ -113,6 +117,8 @@ def human_records(df: Any, puzzle_ids: set[str], exclude_players: Iterable[str] 
         if not row.get("completed") or ms is None or not math.isfinite(float(ms)) or float(ms) <= 0:
             continue
         if str(row["player_id"]) in excluded or str(row.get("id")) in excluded_ids or str(row["puzzle_id"]) not in puzzle_ids:
+            continue
+        if row.get("source") == "test":
             continue
         # Extreme mode solves are played against a clock, so they say little about natural solve time.
         # Rows without a mode (older data, or NaN from a mixed file) are regular.

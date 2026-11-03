@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clock } from "../lib/clock.ts";
 import { explainGap, gapParts, nearestDot, objectiveLine, ordinal, targetCopy, type GapInput } from "../lib/explain.ts";
+import { MIN_HUMAN_SOLVES } from "../lib/insights.ts";
 import type { Dot } from "../lib/zip.ts";
 
 const dots: Dot[] = [[0, 0, 1], [0, 4, 2], [2, 2, 3], [4, 4, 4]];
@@ -71,9 +72,10 @@ test("solver_effort never claims a time gap and says the guess is not a time yet
   const solver: GapInput = { ...base, label: "solver_effort", predicted: { value: 72, unit: "solver_steps" }, actualMs: 90_000 };
   const p = gapParts({ ...solver, backtracks: 4, pause: { ms: 9_000, cell: [2, 3] } });
   assert.equal(p.headline, null, "no percentage for solver steps");
-  assert.equal(p.detail, "You paused 9 s near the 3rd dot and backtracked 4 times. Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.");
+  assert.equal(p.detail, `You paused 9 s near the 3rd dot and backtracked 4 times. Yomi's guess is still in solver steps, not a time. It needs a retrain on ${MIN_HUMAN_SOLVES}+ real solves first.`);
   assert.doesNotMatch(p.detail, /faster|slower|%/);
-  assert.equal(explainGap(solver), "A clean run with no backtracks. Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.");
+  assert.equal(explainGap(solver), `A clean run with no backtracks. Yomi's guess is still in solver steps, not a time. It needs a retrain on ${MIN_HUMAN_SOLVES}+ real solves first.`);
+  assert.equal(MIN_HUMAN_SOLVES, 15);
 });
 
 test("no model or a bad prediction falls back to the learning line, never a ratio", () => {

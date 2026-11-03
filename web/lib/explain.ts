@@ -2,6 +2,7 @@
 // The honesty rules from CLAUDE.md apply: while the model is the solver-effort stand-in it predicts solver
 // steps, not a time, so the copy never turns it into one.
 import { clock } from "./clock.ts";
+import { MIN_HUMAN_SOLVES } from "./insights.ts";
 import type { Cell, Dot } from "./zip.ts";
 
 // "crowd" is the typical time of everyone who solved the puzzle, used while the model only predicts solver steps.
@@ -80,7 +81,7 @@ export function gapParts(i: GapInput): GapParts {
 
   // Solver steps are not a time, so there is no gap to explain; say what happened and what the model cannot do yet.
   if ((i.label !== "human_time" && i.label !== "crowd") || !i.predicted || i.predicted.unit !== "ms" || !(i.predicted.value > 0)) {
-    const learning = "Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.";
+    const learning = `Yomi's guess is still in solver steps, not a time. It needs a retrain on ${MIN_HUMAN_SOLVES}+ real solves first.`;
     return { headline: null, detail: story ? `${story}. ${learning}` : `A clean run with no backtracks. ${learning}` };
   }
 

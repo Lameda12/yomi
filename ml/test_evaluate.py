@@ -10,6 +10,7 @@ import unittest
 from ml.evaluate import eval_stuck, eval_time
 from ml.features import load_puzzles, puzzle_features
 from ml.test_train_stuck import longest_leg_cell
+from ml.train_time import MIN_HUMAN_SOLVES
 
 PUZZLES = load_puzzles()
 
@@ -38,9 +39,15 @@ class TimeEvalTests(unittest.TestCase):
         self.assertEqual(r.metrics, {})
 
     def test_small_folds_are_skipped(self) -> None:
-        r = eval_time(time_solves(3, 8), PUZZLES)  # 16 training solves per fold, under the floor
+        r = eval_time(time_solves(3, 6), PUZZLES)  # 12 training solves per fold, under the floor
         self.assertEqual(r.status, "skipped")
-        self.assertIn("30", r.reason)
+        self.assertIn(f"{MIN_HUMAN_SOLVES}+", r.reason)
+
+    def test_the_fold_floor_is_the_constant_not_a_number_typed_here(self) -> None:
+        under = eval_time(time_solves(2, MIN_HUMAN_SOLVES - 1), PUZZLES)  # each fold trains on MIN_HUMAN_SOLVES - 1 solves
+        self.assertEqual(under.status, "skipped")
+        exact = eval_time(time_solves(2, MIN_HUMAN_SOLVES), PUZZLES)  # each fold trains on exactly MIN_HUMAN_SOLVES solves
+        self.assertEqual(exact.status, "scored")
 
     def test_scored_run_beats_the_mean_baseline_on_a_planted_signal(self) -> None:
         r = eval_time(time_solves(3, 24), PUZZLES)

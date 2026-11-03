@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
-  EXCLUDED_ROW_ID_MAX, MIN_ATTEMPTS, MIN_HEAT_SOLVES, MIN_HUMAN_SOLVES, MIN_PLAYERS,
+  EXCLUDED_ROW_ID_MAX, MIN_ATTEMPTS, MIN_HEAT_SOLVES, MIN_HUMAN_SOLVES, MIN_PLAYERS, MIN_STUCK_SOLVES,
   dataStatus, isTrainable, liveEvaluation, median, puzzleHeat,
 } from "../lib/insights.ts";
 import type { SolveRow } from "../lib/store.ts";
@@ -18,6 +18,10 @@ const IDS = new Set(["zip-5x5-01", "zip-5x5-02", "zip-6x6-01"]);
 test("the thresholds mirror the Python training script", () => {
   const py = readFileSync(new URL("../../ml/train_time.py", import.meta.url), "utf8");
   assert.equal(Number(py.match(/^MIN_HUMAN_SOLVES = (\d+)/m)?.[1]), MIN_HUMAN_SOLVES);
+  assert.equal(MIN_HUMAN_SOLVES, 15, "the time model's floor");
+  const stuck = readFileSync(new URL("../../ml/train_stuck.py", import.meta.url), "utf8");
+  assert.equal(Number(stuck.match(/^MIN_STUCK_SOLVES = (\d+)/m)?.[1]), MIN_STUCK_SOLVES);
+  assert.equal(MIN_STUCK_SOLVES, 30, "the stuck model keeps its own, higher floor");
   assert.match(py, new RegExp(`EXCLUDED_ROW_IDS = frozenset\\(str\\(i\\) for i in range\\(1, ${EXCLUDED_ROW_ID_MAX + 1}\\)\\)`));
 });
 
@@ -31,6 +35,8 @@ test("isTrainable follows the training filter: finished, timed, regular, known p
   assert.ok(!isTrainable(row({ puzzle_id: "zip-unknown" }), IDS));
   assert.ok(!isTrainable(row({ id: 8 }), IDS));
   assert.ok(isTrainable(row({ id: 9 }), IDS));
+  assert.ok(!isTrainable(row({ id: 500, source: "test" }), IDS), "rows marked source = 'test' (migration 007) are left out whatever their id");
+  assert.ok(isTrainable(row({ id: 501, source: "local_import" }), IDS));
   assert.ok(isTrainable(row({ source: "demo" }), IDS), "demo volunteers are real people and training keeps them");
 });
 

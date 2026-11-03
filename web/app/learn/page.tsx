@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EffectBars, Progress, PuzzleDiagram } from "@/components/LearnParts";
 import { MIN_CROWD } from "@/lib/extreme";
-import { MIN_HUMAN_SOLVES, MIN_TRAIN_PLAYERS, dataStatus } from "@/lib/insights";
+import { MIN_HUMAN_SOLVES, MIN_STUCK_SOLVES, MIN_TRAIN_PLAYERS, dataStatus } from "@/lib/insights";
 import { FEATURE_INFO, featureEffects, improvementVerdict, labelPlain, puzzlesFittedOn, sameCoefficients, sketchPuzzle, type EvalEntry, type HistoryEntry } from "@/lib/learn";
 import { loadHistory, loadModel, puzzleFeatureTable } from "@/lib/model";
 import { PRACTICE, PUZZLES } from "@/lib/puzzles";
@@ -266,7 +266,7 @@ async function Learn() {
           {model && Object.keys(model.players).length === 0 && <li>Anything about individual players. It has no per-player adjustment yet.</li>}
           {latest && !latest.stuck.trained && (
             <li>
-              Where you will get stuck. That model is not trained: it needs {MIN_HUMAN_SOLVES} usable solves and had {latest.stuck.solves ?? "none"}. Until then Yomi shows no stuck spots.
+              Where you will get stuck. That model is not trained: it needs {MIN_STUCK_SOLVES} usable solves and had {latest.stuck.solves ?? "none"}. Until then Yomi shows no stuck spots.
             </li>
           )}
           <li>

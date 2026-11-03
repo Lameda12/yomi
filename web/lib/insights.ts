@@ -5,9 +5,12 @@ import { CROWD_VERSION } from "./estimate.ts";
 import type { SolveRow } from "./store.ts";
 
 // What the training script needs before it will fit human solve time (ml/train_time.py MIN_HUMAN_SOLVES).
-export const MIN_HUMAN_SOLVES = 30;
+export const MIN_HUMAN_SOLVES = 15;
+// What the stuck-point model needs (ml/train_stuck.py MIN_STUCK_SOLVES). It has its own, higher floor.
+export const MIN_STUCK_SOLVES = 30;
 export const MIN_TRAIN_PLAYERS = 2;
-// ml/train_time.py EXCLUDED_ROW_IDS: the owner's own test plays, rows 1 to 8. A test checks the two stay in step.
+// ml/train_time.py EXCLUDED_ROW_IDS: the owner's own test plays, rows 1 to 8. Migration 007 marks them source = 'test',
+// which is also left out. A test checks the constants stay in step with the Python.
 export const EXCLUDED_ROW_ID_MAX = 8;
 
 // Provisional display rules for charts that compare the model with what happened. They are a guard against showing a
@@ -18,10 +21,11 @@ export const MIN_HEAT_SOLVES = 5; // finished solves of one puzzle before its st
 
 type Rows = readonly SolveRow[];
 
-/** The training script's filter: finished, timed, Regular mode, a puzzle we know, and not one of the early test rows. */
+/** The training script's filter: finished, timed, Regular mode, a puzzle we know, and not one of the early test rows (by id, or marked source = 'test'). */
 export function isTrainable(r: SolveRow, puzzleIds: ReadonlySet<string>): boolean {
   if (!r.completed || !Number.isFinite(r.solve_ms) || r.solve_ms <= 0) return false;
   if (r.id >= 1 && r.id <= EXCLUDED_ROW_ID_MAX) return false;
+  if (r.source === "test") return false;
   if (!puzzleIds.has(r.puzzle_id)) return false;
   return (r.mode ?? "regular") === "regular";
 }
