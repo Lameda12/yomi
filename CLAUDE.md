@@ -12,12 +12,13 @@ Formula: **Hook → Fix → Proof.** Gen Z voice: casual, punchy, a bit of slang
 
 - **Hook:** You thought "I'll get this in 30 seconds" and then lost 10 minutes. Yomi knows that before you start. 👀
 - **Fix:** A new Zip-style path puzzle every day, and a target to beat before you play. Result card shows the target vs your time. The ML model is meant to predict your time and your 3 stuck spots; every solve is stored, and the model is retrained by hand in batches (it does not update while you play).
-- **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, 60 ml tests passing. Sprint 3: a daily puzzle with a streak (built, not deployed yet).
+- **Proof:** Sprint 1: puzzle grid size predicts difficulty (Queens ρ = +0.84 vs solver effort; Lichess solution length ρ = +0.55 vs real human ratings). Sprint 2: idempotent solve pipeline, server-derived results, 429 queueing, ml tests passing. Sprint 3: a daily puzzle with a streak (built, not deployed yet).
 
 Honesty rules for copy (these override hype):
 - The time model is still on the solver-effort fallback. Its output is solver steps, not ms. Say "predicts how hard it'll be" until the human-time path runs on 30+ real solves.
 - The last retrain (2026-10-22) used 7 usable solves from 1 player. Don't claim accuracy, sample size, or user numbers beyond a fresh count of what is stored.
-- The pre-solve target is one of two things, and the copy must say which. A **crowd median** ("Crowd median: 0:38 (5 solves). Beat it.") is a plain median of earlier solves of that puzzle, shown once 3+ exist; it is not a model prediction, and the count is solves, not players. Otherwise it is the solver-steps read, which is not a time. A model that predicts time (label `human_time`) wins over the crowd median.
+- The pre-solve target is one of three things, and the copy must say which. A **crowd median** ("Crowd median: 0:38 (5 solves). Beat it.") is a plain median of earlier solves of that puzzle, shown once 3+ exist; it is not a model prediction, and the count is solves, not players. **Solver effort** ("Solver effort: on the easier side") is difficulty for a computer, not a human solve time. A **human-time prediction** ("Predicted by Yomi's solve-time model") appears only when a model with label `human_time` is actually deployed, and then it wins over the crowd median. The target is locked at the first move. Do not describe Yomi as learning while you play.
+- Framing: Yomi asks "What makes a puzzle hard for a person?" Peer feedback from the ML presentation (clear problem statement wanted, stronger predictions wanted, game design for collecting data praised) is qualitative classroom feedback, not a user study. Answer it with clearer copy and more real solves, never by lowering `MIN_HUMAN_SOLVES` or other thresholds.
 - Never invent metrics, users, or testimonials.
 
 Full pitch and sprint status: `README.md`.
@@ -66,6 +67,7 @@ Extras, only if everything above is done: a test that /stats totals match DB cou
   - `migrations/`, `scripts/migrate.mjs`: Neon schema.
 - `ml/` (Sprint 2, new): features, training, evaluation, export.
 - `DEMO.md`: showcase talk track. Keep it in sync with behavior.
+- `PLAYTEST.md` and `ml/playtest.py`: the seven-day playtest (participants, return players, daily completion from the anonymous records) and what those records cannot say.
 
 Check `package.json` and the scripts for the exact commands before running anything.
 
