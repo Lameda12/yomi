@@ -102,10 +102,27 @@ test("no em dashes in any line", () => {
 test("target copy: a time target to beat only for a human-time model", () => {
   const human = targetCopy("human_time", 42_000, "on the easier side");
   assert.equal(human.headline, "Target: beat 0:42");
+  assert.match(human.note, /Predicted by Yomi's solve-time model/);
   const solver = targetCopy("solver_effort", 72.4, "on the harder side");
-  assert.match(solver.headline, /Yomi's read: on the harder side\. Think you can crack it\?/);
-  assert.match(solver.note, /72 solver steps for a computer, not a time/);
+  assert.match(solver.headline, /^Solver effort: on the harder side\. Think you can crack it\?$/);
+  assert.match(solver.note, /Difficulty for a computer \(about 72 solver steps\), not how long you will take/);
+  assert.match(solver.note, /does not predict human solve time yet/);
   assert.doesNotMatch(solver.headline + solver.note, /\d:\d\d/, "no clock-looking number for solver steps");
+});
+
+test("the three kinds of target never read as one another", () => {
+  const crowd = targetCopy("crowd", 38_000, "", 5);
+  const human = targetCopy("human_time", 38_000, "");
+  const solver = targetCopy("solver_effort", 311, "middle of the pack");
+  const text = (t: { headline: string; note: string }) => `${t.headline} ${t.note}`;
+  // only the model's time is called a prediction, and only the crowd median is called recorded solves
+  assert.doesNotMatch(text(crowd), /Predicted by|Yomi predicts|solver/i);
+  assert.match(text(crowd), /Not an ML prediction/);
+  assert.match(text(human), /Predicted by Yomi's solve-time model/);
+  assert.doesNotMatch(text(human), /crowd|recorded solves|solver/i);
+  assert.match(text(solver), /^Solver effort:/);
+  assert.doesNotMatch(text(solver), /Crowd|Predicted by|Target: beat/);
+  for (const t of [crowd, human, solver]) assert.doesNotMatch(text(t), /[—–]|learns? (as|while) you play|in real time/i);
 });
 
 test("objective line names the last dot", () => {
@@ -120,7 +137,8 @@ const crowdBase: GapInput = { ...base, label: "crowd", predicted: { value: 50_00
 test("crowd target copy: the median, how many solves it rests on (solves, not players), and the challenge", () => {
   const t = targetCopy("crowd", 38_000, "x", 5);
   assert.equal(t.headline, "Crowd median: 0:38 (5 solves). Beat it.");
-  assert.match(t.note, /everyone who has solved this puzzle/);
+  assert.match(t.note, /previous recorded solves of this puzzle/);
+  assert.match(t.note, /Not an ML prediction/);
   assert.doesNotMatch(t.headline + t.note, /player|Yomi predicts|Yomi's guess/i, "a crowd median is not a Yomi prediction and not a player count");
   assert.equal(targetCopy("crowd", 38_000, "x", 1).headline, "Crowd median: 0:38 (1 solve). Beat it.");
 });

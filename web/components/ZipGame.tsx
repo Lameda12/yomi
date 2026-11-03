@@ -1052,7 +1052,7 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
                   </>
                 ) : (
                   <>
-                    Yomi predicted <b>{showPrediction(predLabel, predicted.value)}</b> for a computer (not a time). You: <b>{clock(elapsed)}</b>.
+                    Solver effort: <b>{showPrediction(predLabel, predicted.value)}</b> for a computer (not a time). You: <b>{clock(elapsed)}</b>.
                   </>
                 )}
               </p>

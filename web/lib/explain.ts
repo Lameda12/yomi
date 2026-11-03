@@ -32,15 +32,15 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
  */
 export function targetCopy(label: Label, value: number, difficulty: string, n = 0): { headline: string; note: string } {
   if (label === "crowd") {
-    return { headline: `Crowd median: ${clock(value)} (${plural(n, "solve")}). Beat it.`, note: "The typical time of everyone who has solved this puzzle so far. The clock starts on your first move." };
+    return { headline: `Crowd median: ${clock(value)} (${plural(n, "solve")}). Beat it.`, note: "Typical time from previous recorded solves of this puzzle. Not an ML prediction. The clock starts on your first move." };
   }
   if (label === "human_time") {
-    return { headline: `Target: beat ${clock(value)}`, note: "Yomi's guess for you. The clock starts on your first move." };
+    return { headline: `Target: beat ${clock(value)}`, note: "Predicted by Yomi's solve-time model. The clock starts on your first move." };
   }
   const challenge = difficulty === "on the easier side" ? "Can you make it look easy?" : difficulty === "on the harder side" ? "Think you can crack it?" : "Can you beat the read?";
   return {
-    headline: `Yomi's read: ${difficulty}. ${challenge}`,
-    note: `About ${Math.round(value)} solver steps for a computer, not a time. Yomi does not predict your time yet.`,
+    headline: `Solver effort: ${difficulty}. ${challenge}`,
+    note: `Difficulty for a computer (about ${Math.round(value)} solver steps), not how long you will take. Yomi does not predict human solve time yet.`,
   };
 }
 
