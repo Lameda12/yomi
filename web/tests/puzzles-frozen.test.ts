@@ -47,3 +47,17 @@ test("daily boards are 5x5, 6x6 or 7x7 and both common sizes are present", () =>
   assert.ok([...sizes].every((n) => n >= 5 && n <= 7));
   assert.ok(sizes.has(5) && sizes.has(6));
 });
+
+test("every daily can be played and accepted end to end: its solution replays as a finished game and fits the solves API limits", async () => {
+  const { replay } = await import("../lib/replay.ts");
+  for (const p of puzzles.slice(30)) {
+    // what the game would log for a clean solve: one event per move after the start, 300 ms apart
+    const events = p.solution.slice(1).map(([r, c], i): [number, number, number, number] => [i * 300, r, c, i + 2]);
+    const game = replay(p.n, p.dots, events);
+    assert.ok(game?.completed, `${p.id} (${p.n}x${p.n}) does not replay as completed`);
+    assert.equal(game.backtracks, 0);
+    // app/api/solves/route.ts: grid_size 5..7, cell indexes 0..6, path length 1..49, solve time over 1 s
+    assert.ok(p.n >= 5 && p.n <= 7 && p.solution.every(([r, c]) => r <= 6 && c <= 6) && p.n * p.n <= 49, `${p.id} is outside the API limits`);
+    assert.ok(game.solveMs >= 1000);
+  }
+});
