@@ -5,7 +5,7 @@ import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
 import { chooseEstimate, estimateFromSaved, lockEstimate, parseMedians, toPrediction, type Estimate, type Medians } from "@/lib/estimate";
 import {
-  DAILY_FIRST_DAY, dailyIndex, formatCountdown, isDailyId, markDailySaved, msUntilNextDay, puzzleTitle, readDailyResult, shareLabel, splitPuzzles, writeDailyResult, type DailyResult,
+  DAILY_FIRST_DAY, dailyIndex, formatCountdown, isDailyId, markDailySaved, msUntilNextDay, puzzleTitle, readDailyResult, shareLabel, splitPuzzles, withSaved, writeDailyResult, type DailyResult,
 } from "@/lib/daily";
 import { explainGap, gapParts, objectiveLine, targetCopy, type GapInput } from "@/lib/explain";
 import { finishKind } from "@/lib/finish";
@@ -219,8 +219,10 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
   const [status, setStatus] = useState<Status>(entry.saved ? "solved" : "idle");
   const [elapsed, setElapsed] = useState(entry.saved?.ms ?? 0);
   const [backtracks, setBacktracks] = useState(entry.saved?.backtracks ?? 0);
-  const [submit, setSubmit] = useState<Submit>(entry.saved?.saved ? "saved" : "none");
+  const [submitState, setSubmit] = useState<Submit>(entry.saved?.saved ? "saved" : "none");
   const [stuck, setStuck] = useState<Cell | null>(entry.saved?.stuck ?? null);
+  // A restored daily the server has since confirmed (see flushQueue below) counts as saved, wherever the state came from.
+  const submit: Submit = restored?.saved ? "saved" : submitState;
   // Facts about the solve that just ended, for the result card. Cleared with the next attempt.
   type SolveInfo = { solveId: string; pauseMs: number | null; firstSolve: boolean; mode: Mode; bestMs: number | null; previousBest: number | null; newBest: boolean };
   const [solveInfo, setSolveInfo] = useState<SolveInfo | null>(() =>
@@ -288,9 +290,14 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
   const poolIds = isDailyId(puzzle.id) ? dailyIds : practiceIds;
   const labelAt = useMemo(() => new Map(dots.map(([r, c, v]) => [r * n + c, v])), [dots, n]);
 
-  // Resend solves that could not be saved on an earlier visit.
+  // Resend solves that could not be saved on an earlier visit. A daily that gets through now is remembered as saved
+  // (only the one with that solve id), so its share link points at the result page, also on the screen already showing it.
   useEffect(() => {
-    void flushQueue();
+    void flushQueue().then(({ saved }) => {
+      if (saved.length === 0) return;
+      for (const id of saved) markDailySaved(id);
+      setRestored((r) => withSaved(r, saved));
+    });
     void retryPendingNickname(); // a nickname that could not be saved last time
   }, []);
 

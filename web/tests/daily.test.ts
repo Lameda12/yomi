@@ -5,7 +5,7 @@ process.env.TZ = "America/Halifax";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DAILY_FIRST_DAY, dailyIndex, dailyNumber, dailyNumberOf, daysSinceEpoch, formatCountdown, isDailyId, markDailySaved, msUntilNextDay, parseDailyResult, puzzleTitle, shareLabel, splitPuzzles,
+  DAILY_FIRST_DAY, dailyIndex, dailyNumber, dailyNumberOf, daysSinceEpoch, formatCountdown, isDailyId, markDailySaved, msUntilNextDay, parseDailyResult, puzzleTitle, shareLabel, splitPuzzles, withSaved,
 } from "../lib/daily.ts";
 import { sprintOrder } from "../lib/sprint.ts";
 import { localDay } from "../lib/streak.ts";
@@ -174,4 +174,16 @@ test("Extreme plays the original 30 in the order it always did, and never a dail
   assert.ok(order.every((id) => !isDailyId(id)));
   assert.deepEqual(order, sprintOrder(all.slice(0, 30)).map((p) => p.id), "same order as before the dailies were added");
   assert.deepEqual(order.slice(0, 15), all.slice(0, 15).map((p) => p.id)); // 5x5 first, in file order
+});
+
+test("withSaved marks a restored result saved only when its own solve was uploaded", () => {
+  const r = parseDailyResult(JSON.stringify({ ...good, saved: false }))!;
+  const other = "11111111-1111-4111-8111-111111111111";
+  assert.equal(withSaved(r, [other]), r, "another solve being saved changes nothing (same object, no re-render)");
+  assert.equal(withSaved(r, []), r);
+  assert.equal(withSaved(null, [good.solve_id]), null);
+  const done = withSaved(r, [other, good.solve_id])!;
+  assert.equal(done.saved, true);
+  assert.deepEqual({ ...done, saved: false }, r, "nothing else about the result changes");
+  assert.equal(withSaved(done, [good.solve_id]), done, "already saved: unchanged");
 });

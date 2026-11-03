@@ -152,6 +152,11 @@ export function writeDailyResult(r: DailyResult): void {
   } catch {}
 }
 
+/** A restored result with its solve marked saved, when `savedIds` (from flushQueue) holds that solve. Otherwise the same object. */
+export function withSaved(r: DailyResult | null, savedIds: readonly string[]): DailyResult | null {
+  return r && !r.saved && savedIds.includes(r.solve_id) ? { ...r, saved: true } : r;
+}
+
 /** The server confirmed this solve: remember it, so the share link on a later visit points at the result page. */
 export function markDailySaved(solveId: string): void {
   try {
