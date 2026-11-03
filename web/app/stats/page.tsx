@@ -4,8 +4,9 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { Heatmap, PredictionScatter } from "@/components/StatsParts";
 import { MIN_ATTEMPTS, MIN_HEAT_SOLVES, MIN_PLAYERS, dataStatus, liveEvaluation, puzzleHeat } from "@/lib/insights";
+import { puzzleTitle } from "@/lib/daily";
 import { loadModel } from "@/lib/model";
-import { PUZZLES } from "@/lib/puzzles";
+import { PRACTICE, PUZZLES } from "@/lib/puzzles";
 import { allSolves, storageLabel } from "@/lib/store";
 
 export const metadata: Metadata = {
@@ -48,7 +49,7 @@ async function Stats() {
   const data = dataStatus(rows, ids);
   const steps = rows.filter((r) => r.pred_unit === "solver_steps").length;
 
-  const heats = PUZZLES.map((p, i) => ({ p, num: i + 1, heat: puzzleHeat(rows, p.id) }));
+  const heats = PUZZLES.map((p) => ({ p, title: puzzleTitle(p.id, PRACTICE.indexOf(p) + 1), heat: puzzleHeat(rows, p.id) }));
   const ready = heats.filter((h) => h.heat.ready);
   const early = heats.filter((h) => h.heat.n > 0 && !h.heat.ready);
   const ev = model ? liveEvaluation(rows, model.version) : null;
@@ -78,8 +79,8 @@ async function Stats() {
         </p>
         {ready.length > 0 ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {ready.map(({ p, num, heat }) => (
-              <Heatmap key={p.id} n={p.n} dots={p.dots} heat={heat} title={`Puzzle ${num} · ${p.n}×${p.n}`} />
+            {ready.map(({ p, title, heat }) => (
+              <Heatmap key={p.id} n={p.n} dots={p.dots} heat={heat} title={`${title} · ${p.n}×${p.n}`} />
             ))}
           </div>
         ) : (
@@ -87,7 +88,7 @@ async function Stats() {
         )}
         {early.length > 0 && (
           <p className="text-xs opacity-70">
-            Not enough yet: {early.map((h) => `puzzle ${h.num} (${h.heat.n})`).join(", ")}.
+            Not enough yet: {early.map((h) => `${h.title} (${h.heat.n})`).join(", ")}.
           </p>
         )}
         <p className="text-xs opacity-70">

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "node --conditions=react-server --test 'tests/*.test.ts'",
     "gen:puzzles": "node scripts/generate-puzzles.ts",
+    "gen:daily": "node scripts/generate-daily.ts",
     "db:migrate": "node --env-file-if-exists=.env.neon.local scripts/migrate.mjs"
   },
   "dependencies": {

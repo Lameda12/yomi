@@ -7,7 +7,8 @@ export interface Attempt {
   solve_id: string | null;
   created_at: string;
   puzzle_id: string;
-  puzzle_number: number | null; // the public number of the puzzle (its position in the list), when it still exists
+  puzzle_number: number | null; // the public number of a practice puzzle (its position in the original list); null for a daily
+  puzzle_title: string | null; // "Yomi #7" for a daily, "Practice #18" for a practice puzzle; null when the puzzle no longer exists
   grid_size: number;
   mode: "regular" | "extreme";
   completed: boolean;

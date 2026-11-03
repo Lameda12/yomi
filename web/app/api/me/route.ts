@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Attempt, Mine, MinePuzzle } from "@/lib/mine";
-import { PUZZLES } from "@/lib/puzzles";
+import { puzzleTitle } from "@/lib/daily";
+import { PRACTICE, PUZZLES } from "@/lib/puzzles";
 import { playerSolves, type SolveRow } from "@/lib/store";
 
 // A player's own attempts, looked up by the anonymous id in the body (never in a URL or a log). The answer holds only
@@ -8,7 +9,7 @@ import { playerSolves, type SolveRow } from "@/lib/store";
 const MAX_BODY_BYTES = 2_000;
 const Body = z.object({ player_id: z.uuid() });
 
-const numberOf = new Map(PUZZLES.map((p, i) => [p.id, i + 1]));
+const numberOf = new Map(PRACTICE.map((p, i) => [p.id, i + 1])); // practice puzzles only; a daily has no position, its number is in its id
 
 function toAttempt(r: SolveRow): Attempt {
   return {
@@ -16,6 +17,7 @@ function toAttempt(r: SolveRow): Attempt {
     created_at: r.created_at,
     puzzle_id: r.puzzle_id,
     puzzle_number: numberOf.get(r.puzzle_id) ?? null,
+    puzzle_title: PUZZLES.some((p) => p.id === r.puzzle_id) ? puzzleTitle(r.puzzle_id, numberOf.get(r.puzzle_id) ?? 0) : null,
     grid_size: r.grid_size,
     mode: r.mode === "extreme" ? "extreme" : "regular",
     completed: r.completed,

@@ -4,9 +4,9 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { EffectBars, Progress, PuzzleDiagram } from "@/components/LearnParts";
 import { MIN_HUMAN_SOLVES, MIN_TRAIN_PLAYERS, dataStatus } from "@/lib/insights";
-import { FEATURE_INFO, featureEffects, improvementVerdict, labelPlain, sameCoefficients, sketchPuzzle, type EvalEntry, type HistoryEntry } from "@/lib/learn";
+import { FEATURE_INFO, featureEffects, improvementVerdict, labelPlain, puzzlesFittedOn, sameCoefficients, sketchPuzzle, type EvalEntry, type HistoryEntry } from "@/lib/learn";
 import { loadHistory, loadModel, puzzleFeatureTable } from "@/lib/model";
-import { PUZZLES } from "@/lib/puzzles";
+import { PRACTICE, PUZZLES } from "@/lib/puzzles";
 import { PUZZLE_FEATURES } from "@/lib/predict";
 import { allSolves } from "@/lib/store";
 
@@ -78,7 +78,12 @@ async function Learn() {
   const effects = model && table ? featureEffects(model, table) : [];
   const first = PUZZLES[0];
   const sketch = first ? sketchPuzzle(first) : null;
-  const sizes = [...new Set(PUZZLES.map((p) => p.n))].sort((a, b) => a - b);
+  // The model was fitted on the puzzles that existed when it was trained. Dailies came later, so a newer board size may be new to it.
+  const fitted = puzzlesFittedOn(latest?.trained_at, PRACTICE, PUZZLES);
+  const sizesOf = (ps: readonly { n: number }[]) => [...new Set(ps.map((p) => p.n))].sort((a, b) => a - b);
+  const boards = (sizes: number[]) => sizes.map((n) => `${n}×${n}`).join(" or ");
+  const seenSizes = fitted ? sizesOf(fitted) : sizesOf(PRACTICE);
+  const unseenSizes = sizesOf(PUZZLES).filter((n) => !seenSizes.includes(n));
   const verdict = improvementVerdict(history);
 
   return (
@@ -153,7 +158,7 @@ async function Learn() {
             </p>
             {model.trained_on.label === "solver_effort" ? (
               <p>
-                It was fitted on the {PUZZLES.length} puzzles themselves (one example each), so <b>no one&apos;s solving time has shaped it yet</b>. More players will change
+                It was fitted on {fitted ? `the ${fitted.length} puzzles` : "the puzzles"} themselves (one example each), so <b>no one&apos;s solving time has shaped it yet</b>. More players will change
                 the counts above, not this model, until it is retrained on enough real solves.
               </p>
             ) : (
@@ -206,7 +211,7 @@ async function Learn() {
           <EffectBars effects={effects} />
           <p className="rounded-xl bg-foreground/5 p-3 text-xs">
             Read this as &ldquo;what the model leans on&rdquo;, not &ldquo;what makes a puzzle hard&rdquo;. The features move together (in our puzzles, bigger boards have more turns and longer gaps), and the
-            model was fitted on only {PUZZLES.length} puzzles, so it cannot tell them apart reliably.
+            model was fitted on only {fitted ? `${fitted.length} puzzles` : "a small set of puzzles"}, so it cannot tell them apart reliably.
             {model.trained_on.label === "solver_effort" && " The solver-effort feature is switched off while the label is solver steps, because it would be the answer itself."}
           </p>
           <details className="rounded-xl border border-foreground/15 p-3 text-sm">
@@ -249,7 +254,8 @@ async function Learn() {
           {latest?.time.eval.status !== "scored" && <li>How accurate it is. No held-out check has been run, so there is no accuracy to report.</li>}
           {model?.trained_on.label === "solver_effort" && <li>How long people take. It predicts solver steps, so Yomi shows a relative read and not a time.</li>}
           <li>
-            Puzzles beyond what it has seen: all {PUZZLES.length} are {sizes.map((n) => `${n}×${n}`).join(" or ")} boards.
+            Puzzles beyond what it has seen: it was fitted on {boards(seenSizes)} boards only.
+            {unseenSizes.length > 0 && <> The daily puzzles also include {boards(unseenSizes)} boards, so its guess for those is a stretch of what it learned, not something it has seen.</>}
           </li>
           {model && Object.keys(model.players).length === 0 && <li>Anything about individual players. It has no per-player adjustment yet.</li>}
           {latest && !latest.stuck.trained && (

@@ -1,4 +1,4 @@
-// Daily streak, kept on the player's device only (a list of local calendar days they solved something).
+// Daily streak, kept on the player's device only (a list of local calendar days they solved the daily).
 // No server round trip and nothing new is collected, so the anonymous-data rule still holds.
 
 /** Local calendar day as YYYY-MM-DD. */
@@ -20,6 +20,11 @@ export interface StreakState {
   week: boolean[]; // last 7 days, oldest first, last entry is today
 }
 
+/** Only the days on or after `first` (YYYY-MM-DD), so days saved under an older meaning of the list do not count. */
+export function daysFrom(solvedDays: string[], first: string): string[] {
+  return solvedDays.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= first);
+}
+
 export function streakState(solvedDays: string[], today: Date): StreakState {
   const days = new Set(solvedDays);
   const doneToday = days.has(daysBefore(today, 0));
@@ -34,8 +39,9 @@ export function streakState(solvedDays: string[], today: Date): StreakState {
   return { count, doneToday, atRisk: !doneToday && count > 0, week };
 }
 
-export function addDay(solvedDays: string[], today: Date): string[] {
-  const d = localDay(today);
+/** `today` may be a Date or a day that is already a YYYY-MM-DD string. */
+export function addDay(solvedDays: string[], today: Date | string): string[] {
+  const d = typeof today === "string" ? today : localDay(today);
   if (solvedDays.includes(d)) return solvedDays;
   // Bounded so localStorage cannot grow forever; a streak past a year still reads correctly.
   return [...solvedDays, d].sort().slice(-400);

@@ -18,15 +18,23 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 ## First run (what a new visitor sees)
 
-1. They land straight on a puzzle with a 3x3 how-to-play on top: drag 1 to 2, undo, fill every cell, dots in order. One tap on **Skip** closes it. It shows once per browser, and **Menu > How to play** reopens it.
+1. They land on today's Yomi (the daily puzzle) with a 3x3 how-to-play on top: drag 1 to 2, undo, fill every cell, dots in order. One tap on **Skip** closes it. It shows once per browser, and **Menu > How to play** reopens it.
 2. The tutorial is practice only: it sends nothing to the server, so it never creates a solve, never shows in /stats, and never reaches training data.
 3. The main screen is the timer, the prediction line, the grid and Undo/Reset. Mode (Regular/Extreme), skip, your attempts, what the data shows, how Yomi learns, change name, streak and the privacy note are in **Menu**.
 4. **What we store** (linked from the first-run screen, the footer and the menu, at `/what-we-store`) lists every field saved, why, and what is never saved (email, account, IP address, cookies, analytics). It is generated from one list that a test checks against the real migrations, API validation, browser storage keys, rate limits and logging, so it cannot drift from the code.
 5. The nickname is optional and nothing asks for it: **Menu > Change name** sets one, and it only appears on result links you share (otherwise they say "Anon xxxx").
 
+## The daily
+
+- Everyone gets the same puzzle on the same local calendar day, shown as "Yomi #N". It changes at the player's own local midnight. There are 120 pre-generated dailies (5x5, 6x6 and a 7x7 every tenth day) that cycle, so after day 120 the numbers repeat. Day 0 is 2026-11-03.
+- After the daily is solved the result card shows a countdown to the next one and a **Practice** button. Practice plays the original 30 puzzles. Reopening Yomi the same day shows today's result, not a fresh puzzle. **Menu > Today's Yomi** goes back to the daily from practice.
+- The streak counts a day only when that day's daily was solved. It lives on the device only.
+- Extreme and /demo still play the original 30 puzzles only.
+- Known tradeoff: the browser gets the whole puzzle list, so upcoming dailies are technically visible to someone who looks.
+
 ## The learning pages
 
-- **/learn (How Yomi learns):** the four-step loop with live counts (usable solves against the 30-solve rule), what the current model is (today: solver steps, a stand-in, so no one's solving time has shaped it), the six features on puzzle 1, a bar chart of how far each feature moves the guess across the 30 puzzles, a "what it does not know yet" list, and the version table. Say out loud that the model is retrained by hand in batches and does not change while people play, and that no version has a held-out score yet.
+- **/learn (How Yomi learns):** the four-step loop with live counts (usable solves against the 30-solve rule), what the current model is (today: solver steps, a stand-in, so no one's solving time has shaped it), the six features on puzzle 1, a bar chart of how far each feature moves the guess across all the puzzles (the 30 originals and the 120 dailies), a "what it does not know yet" list, and the version table. Say out loud that the model is retrained by hand in batches and does not change while people play, and that no version has a held-out score yet.
 - **/stats (What the data shows):** heatmaps only for puzzles with 5+ finished solves. The guesses-vs-reality chart only appears for a model that predicts time, with 5+ players and 20+ first tries; today it says "nothing to compare yet". Never present an empty state as a result.
 - **/you (Your attempts):** your own attempts by board size, a replay of each path, your data as a download. Looked up by the anonymous ID in your browser. No ranking, no comparison with anyone.
 
@@ -41,7 +49,7 @@ Without a `DATABASE_URL` it saves solves to `data/solves.jsonl`, so no Neon is n
 
 - The path draws smoothly: the line grows to each new cell and eases back when you undo or reset.
 - Finishing a grid fires a short spark burst (under a second) from the last cell, and the line turns green. Each Extreme solve gets a lighter version, since the next puzzle follows at once.
-- **Next puzzle** is the one orange button on the result card. It stays pinned to the bottom of the screen and has focus, so Enter works on a keyboard.
+- On a practice result, **Next puzzle** is the one orange button on the card. On the daily result it is **Practice**, and it is not focused, so Enter does not skip the result by accident. It stays pinned to the bottom of the screen and has focus, so Enter works on a keyboard.
 - With `prefers-reduced-motion` the path snaps and there is no spark effect.
 
 ## Sharing a result
@@ -72,14 +80,14 @@ Open `/demo` on the projector (1080p fits a whole round; at 720p the result text
 
 ## Future work
 
-- **Model-tuned daily difficulty** is not built. It only makes sense once a model trained on human solve times exists (30+ completed solves from 2+ players; today there are fewer). Until then the model predicts solver effort, which is not what a player finds hard.
+- **Model-tuned daily difficulty** is not built: the dailies are a fixed pool in a fixed order. It only makes sense once a model trained on human solve times exists (30+ completed solves from 2+ players; today there are fewer). Until then the model predicts solver effort, which is not what a player finds hard.
 
 ## If asked
 
 - *Why not just use the solver labels?* Queens backtracks track grid size almost perfectly (ρ = +0.84); within one grid size, region features drop to about 0. The solver mostly counts board size, not what trips people up.
 - *How many human solves so far?* Few. Collecting them is the Sprint 2 blocker; /learn shows the live count against the 30-solve rule.
 - *Privacy?* An anonymous random ID per browser, with no accounts or personal data.
-- *Why would anyone come back?* A daily streak: a small 🔥 counter on the main screen (and on the result card), plus a 7-day strip on the result panel. It is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
+- *Why would anyone come back?* A daily puzzle and a streak for solving it: a small 🔥 counter on the main screen and the result card, plus a 7-day strip and a countdown to the next Yomi on the daily result. The streak is kept only on the player's device and sends nothing to the server. Each return day is another real solve for the model. It is new and unmeasured, so don't claim it works yet.
 
 ## Next
 

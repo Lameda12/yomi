@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { clock } from "@/lib/clock";
-import { PUZZLES } from "@/lib/puzzles";
+import { puzzleTitle } from "@/lib/daily";
+import { PRACTICE } from "@/lib/puzzles";
 import { clockLine, predictionLine, resultLine } from "@/lib/share";
 import { getSharedSolve } from "@/lib/store";
 
@@ -45,13 +46,14 @@ export default function SharePage({ params }: Props) {
 async function Result({ params }: Props) {
   const s = await load(params);
   if (!s) notFound();
-  const number = PUZZLES.findIndex((p) => p.id === s.puzzle_id) + 1;
+  // Practice puzzles are numbered by position in the original list, dailies by their id (Yomi #N). Both ranges overlap, so the word matters.
+  const title = puzzleTitle(s.puzzle_id, PRACTICE.findIndex((p) => p.id === s.puzzle_id) + 1);
   const pred = predictionLine(s);
   const clk = clockLine(s);
   return (
     <section className="flex w-full flex-col items-center gap-4 rounded-2xl border border-foreground/20 p-6 text-center" data-testid="shared-result">
       <p className="font-mono text-xs opacity-70">
-        {number > 0 ? `Puzzle #${number} · ` : ""}
+        {title !== "Yomi" ? `${title} · ` : ""}
         {s.grid_size}×{s.grid_size}
         {s.mode === "extreme" ? " · Extreme ⚡" : ""}
       </p>

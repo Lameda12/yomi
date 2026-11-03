@@ -1,5 +1,6 @@
 // Pure helpers behind the "How Yomi learns" page: what the six features mean, how far each one moves the model's guess,
 // the model history file, and the honest answer to "did a newer version improve". No file access here (see lib/model.ts).
+import { DAILY_FIRST_DAY } from "./daily.ts";
 import { PUZZLE_FEATURES, type Geometry, type Label, type Model, type PuzzleFeature } from "./predict.ts";
 
 export const FEATURE_INFO: Record<PuzzleFeature, { title: string; plain: string; idea: string }> = {
@@ -34,6 +35,16 @@ export const FEATURE_INFO: Record<PuzzleFeature, { title: string; plain: string;
     idea: "A rough sign of how tangled the puzzle is for a machine. It is not the same thing as hard for a person.",
   },
 };
+
+/**
+ * The puzzles a model trained on `trainedAt` (YYYY-MM-DD) was fitted on. The training script reads every puzzle in
+ * data/puzzles.json, and the daily pool was added on DAILY_FIRST_DAY, so a model trained before that day saw only the
+ * originals. Null when the date is unknown: the page then states no count rather than guess one.
+ */
+export function puzzlesFittedOn<T>(trainedAt: string | undefined, originals: readonly T[], all: readonly T[]): readonly T[] | null {
+  if (trainedAt === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(trainedAt)) return null;
+  return trainedAt < DAILY_FIRST_DAY ? originals : all;
+}
 
 /** What the model's output means, in words a player can use. */
 export function labelPlain(label: Label): { short: string; long: string } {

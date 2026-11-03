@@ -33,7 +33,7 @@ function Counter({ label, value }: { label: string; value: number | null }) {
 }
 
 /** Projector screen: live totals on top, the big game below. Works with no database: the game needs none. */
-export default function DemoScreen({ puzzles, coreCount, prediction }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null }) {
+export default function DemoScreen({ puzzles, prediction }: { puzzles: PublicPuzzle[]; prediction: TimeInfo | null }) {
   const [stats, setStats] = useState<Stats>(readCache);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
@@ -82,7 +82,7 @@ export default function DemoScreen({ puzzles, coreCount, prediction }: { puzzles
       <p className="h-5 text-sm opacity-60" data-testid="stats-status" aria-live="polite">
         {stats.stale ? (stats.solves === null ? "Counters offline, waiting for the database…" : "Showing the last numbers we saw (database slow or offline).") : "Live · updates every 10 s"}
       </p>
-      <ZipGame puzzles={puzzles} coreCount={coreCount} prediction={prediction} demo />
+      <ZipGame puzzles={puzzles} prediction={prediction} demo />
     </main>
   );
 }
