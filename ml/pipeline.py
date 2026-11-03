@@ -113,16 +113,16 @@ Generated {today} by `python -m ml.pipeline`. Numbers below are what the data ga
 ## Data
 
 - Source: `{source}`. Rows read: {n_rows}.
-- Used for training: completed solves from real humans only, minus the 8 early test rows (ids 1-8). That left **{time_m.human_solves} solves from {n_players} player(s)**.
+- Used for training: completed solves from real humans only, minus the 8 early test rows (marked `source = 'test'`, and excluded by id 1-8 until that marker is in the database). That left **{time_m.human_solves} solves from {n_players} player(s)**.
 - Time-model label: **`{time_m.label}`**. {"This is the stand-in: the output is solver search steps, not time." if time_m.label == LABEL_SOLVER else "Predictions are human solve time in ms."}
 - Average solution-path length is about {n_cells:.0f} cells, so a random pick of 3 cells hits the stuck cell about {pct(3 / n_cells)} of the time.
 """
-    tail = """
+    tail = f"""
 
 ## What this means
 
 - The deployed model is the solver-effort fallback. The honest way to describe it is "predicts how hard it'll be", not "predicts your time".
-- Both evaluations need real data we do not have yet: 30+ completed human solves from 2+ players (and for the time model, 30+ in each training fold). The code for both is written and unit-tested on synthetic data, and those synthetic tests are not results.
+- Both evaluations need real data we do not have yet: solves from 2+ players, with {MIN_HUMAN_SOLVES}+ completed human solves in each training fold for the time model and {MIN_STUCK_SOLVES}+ for the stuck-point model. The code for both is written and unit-tested on synthetic data, and those synthetic tests are not results.
 - Next: run `python -m ml.pipeline --source neon` once the live site has collected solves. It overwrites `web/public/model.json` and this file (the previous report stays in `reports/history/`), and appends a line to `web/public/model_history.json`.
 - The model does not learn while people play. Solves are stored, and a person runs the pipeline to retrain it in a batch.
 """

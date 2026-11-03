@@ -67,12 +67,24 @@ export async function submitSolve(p: SolvePayload): Promise<"saved" | "queued" |
   return "queued";
 }
 
-/** Called on page load: resend anything parked by an earlier visit. */
-export async function flushQueue(): Promise<void> {
-  const settled = new Set<string>();
+export interface FlushResult {
+  saved: string[]; // solve ids the server stored (or already had): safe to link to as a result page
+  rejected: string[]; // solve ids the server refused for good: dropped from the queue, never saved
+}
+
+/**
+ * Called on page load: resend anything parked by an earlier visit. A solve the server could not take right now (network,
+ * rate limit, server error) stays parked and is in neither list.
+ */
+export async function flushQueue(): Promise<FlushResult> {
+  const out: FlushResult = { saved: [], rejected: [] };
   for (const p of readQueue()) {
-    if ((await post(p)) !== "retry") settled.add(p.solve_id);
+    const r = await post(p);
+    if (r === "ok") out.saved.push(p.solve_id);
+    else if (r === "drop") out.rejected.push(p.solve_id);
   }
   // Re-read so a solve queued while we were flushing is not lost.
+  const settled = new Set([...out.saved, ...out.rejected]);
   if (settled.size) writeQueue(readQueue().filter((p) => !settled.has(p.solve_id)));
+  return out;
 }

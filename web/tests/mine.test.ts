@@ -4,7 +4,7 @@ import { exportJson, fmtClock, guessLine, sizeSummaries, tryNumbers, vsGuess, ty
 import { replay, type ReplayStep } from "../lib/replay.ts";
 
 const a = (o: Partial<Attempt> = {}): Attempt => ({
-  solve_id: "s", created_at: "2026-10-23T10:00:00Z", puzzle_id: "zip-5x5-01", puzzle_number: 1, grid_size: 5, mode: "regular", completed: true, solve_ms: 30_000,
+  solve_id: "s", created_at: "2026-10-23T10:00:00Z", puzzle_id: "zip-5x5-01", puzzle_number: 1, puzzle_title: "Practice #1", grid_size: 5, mode: "regular", completed: true, solve_ms: 30_000,
   backtracks: 0, max_pause_ms: null, stuck_cell: null, pred_value: null, pred_unit: null, model_version: null, events: [], ...o,
 });
 
@@ -37,6 +37,14 @@ test("vsGuess and guessLine only compare a time with a time", () => {
   assert.match(guessLine(a({ pred_unit: "solver_steps", pred_value: 70 }))!, /not a time/);
   assert.equal(guessLine(a()), null);
   assert.equal(fmtClock(65_400), "1:05");
+});
+
+test("a crowd-median target reads as the crowd median, not as Yomi's guess", () => {
+  const c = { pred_unit: "ms" as const, pred_value: 40_000, model_version: "crowd-median" };
+  assert.equal(guessLine(a(c)), "The crowd median was 0:40. You took 0:30, 25% faster than it.");
+  assert.equal(guessLine(a({ ...c, pred_value: 20_000 })), "The crowd median was 0:20. You took 0:30, 50% slower than it.");
+  assert.match(guessLine(a({ ...c, pred_value: 31_000 }))!, /^The crowd median was 0:31\. You took 0:30, close to it\.$/);
+  assert.doesNotMatch(guessLine(a(c))!, /Yomi/);
 });
 
 test("the download holds the player's attempts and no anonymous id", () => {

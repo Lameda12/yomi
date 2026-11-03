@@ -10,8 +10,9 @@ Stuck: top-3 hit rate (form target 60%) against a random-3-cells baseline. The b
        expected hit rate of picking 3 distinct cells uniformly, min(3, n_cells) / n_cells per solve.
 
 A fold is only scored when its training part is large enough for the model to fit on human data
-(the same 30-solve floor the models use). If that never holds the result is "skipped" with the
-reason, never a made-up number.
+(MIN_HUMAN_SOLVES for the time model, MIN_STUCK_SOLVES for the stuck model; both are read from the
+training modules, not typed here). If that never holds the result is "skipped" with the reason,
+never a made-up number.
 """
 from __future__ import annotations
 

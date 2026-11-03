@@ -3,13 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
+import { chooseEstimate, estimateFromSaved, lockEstimate, parseMedians, toPrediction, type Estimate, type Medians } from "@/lib/estimate";
+import {
+  DAILY_FIRST_DAY, dailyIndex, formatCountdown, isDailyId, markDailySaved, msUntilNextDay, puzzleTitle, readDailyResult, shareLabel, splitPuzzles, withSaved, writeDailyResult, type DailyResult,
+} from "@/lib/daily";
 import { explainGap, gapParts, objectiveLine, targetCopy, type GapInput } from "@/lib/explain";
 import { finishKind } from "@/lib/finish";
 import { sharePath, shareMessage } from "@/lib/share";
 import { findStuck, type GameEvent } from "@/lib/stuck";
 import { getPlayerId, retryPendingNickname, startDone } from "@/lib/player";
 import { timeValue, type TimeInfo } from "@/lib/predict";
-import { addDay, daysBefore, streakState } from "@/lib/streak";
+import { addDay, daysBefore, daysFrom, localDay, streakState } from "@/lib/streak";
 import {
   durationLabel, formatRemaining, markSprintRulesSeen, readScores, readSprintSeconds, recordScore, shareScoreMessage, sprintOrder, sprintRulesSeen,
   writeScores, writeSprintSeconds,
@@ -90,32 +94,58 @@ function readZipBefore(): boolean | null {
   }
 }
 
-// The first `coreCount` puzzles come in order for everyone; after that, random practice.
-function pickPuzzle(puzzles: PublicPuzzle[], coreCount: number, not?: string, demo = false): PublicPuzzle {
+// Practice and the demo: any original puzzle, preferring ones this device has not seen yet.
+function pickPractice(pool: PublicPuzzle[], not?: string): PublicPuzzle {
   const seen = readList(SEEN_KEY);
-  if (demo) {
-    // Presenter screen: any puzzle, preferring ones this screen has not shown yet. No fixed core order.
-    const pool = puzzles.filter((p) => p.id !== not);
-    const fresh = pool.filter((p) => !seen.includes(p.id));
-    const from = fresh.length ? fresh : pool;
-    return from[Math.floor(Math.random() * from.length)];
+  const others = pool.filter((p) => p.id !== not);
+  const fresh = others.filter((p) => !seen.includes(p.id));
+  const from = fresh.length ? fresh : others.length ? others : pool;
+  return from[Math.floor(Math.random() * from.length)];
+}
+
+// What the screen shows: a puzzle, which track it belongs to, and for a daily the local day it was issued on. When
+// that daily was already solved today, `saved` holds the result and the screen shows it instead of a fresh puzzle.
+type Track = "daily" | "practice";
+interface Entry {
+  puzzle: PublicPuzzle;
+  track: Track;
+  day: string | null;
+  saved: DailyResult | null;
+}
+
+function dailyEntry(dailies: PublicPuzzle[], practice: PublicPuzzle[], now: Date): Entry {
+  const puzzle = dailies[dailyIndex(now, dailies.length)];
+  if (!puzzle) return { puzzle: pickPractice(practice), track: "practice", day: null, saved: null };
+  const day = localDay(now);
+  const r = readDailyResult();
+  // Trust a saved result only if it is for this exact daily and its path really solves the board.
+  const saved = r && r.day === day && r.puzzle_id === puzzle.id && isSolved(puzzle.n, puzzle.dots, r.path) ? r : null;
+  return { puzzle, track: "daily", day, saved };
+}
+
+// The predicted stuck cells of a puzzle from the server. Any failure is an empty list, which just means no overlay.
+async function loadStuckCells(id: string): Promise<Cell[]> {
+  try {
+    const res = await fetch(`/api/stuck?puzzle_id=${encodeURIComponent(id)}`);
+    if (!res.ok) return [];
+    const body: unknown = await res.json();
+    const raw = (body as { cells?: unknown }).cells;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((c): c is Cell => Array.isArray(c) && c.length === 2 && c.every((v) => Number.isInteger(v)));
+  } catch {
+    return [];
   }
-  const core = puzzles.slice(0, coreCount).find((p) => !seen.includes(p.id));
-  if (core) return core;
-  const practice = puzzles.slice(coreCount).filter((p) => p.id !== not);
-  const fresh = practice.filter((p) => !seen.includes(p.id));
-  const pool = fresh.length ? fresh : practice;
-  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 // A time model predicts milliseconds. The solver-effort stand-in predicts search steps, which are not a time.
-function showPrediction(info: TimeInfo, value: number): string {
-  return info.label === "human_time" ? clock(value) : `about ${Math.round(value)} solver steps`;
+function showPrediction(label: "human_time" | "solver_effort", value: number): string {
+  return label === "human_time" ? clock(value) : `about ${Math.round(value)} solver steps`;
 }
 
-// Where this puzzle's prediction sits among all of them, so "steps" still means something to a player.
-function difficultyWord(info: TimeInfo, puzzleId: string): string {
-  const all = Object.values(info.logByPuzzle).sort((a, b) => a - b);
+// Where this puzzle's prediction sits among the puzzles of its own pool (practice or daily), so "steps" still means
+// something to a player.
+function difficultyWord(info: TimeInfo, puzzleId: string, poolIds: ReadonlySet<string>): string {
+  const all = Object.entries(info.logByPuzzle).filter(([id]) => poolIds.has(id)).map(([, v]) => v).sort((a, b) => a - b);
   const mine = info.logByPuzzle[puzzleId];
   const below = all.filter((v) => v < mine).length / Math.max(1, all.length - 1);
   return below < 1 / 3 ? "on the easier side" : below > 2 / 3 ? "on the harder side" : "middle of the pack";
@@ -138,10 +168,12 @@ interface Attempt {
   lastWasUndo: boolean;
   device: "mouse" | "touch" | null;
   mode: Mode; // locked at the first move, so the toggle cannot change an attempt in progress
+  estimate: Estimate | null | undefined; // the pre-solve target, locked at the first move (undefined until then); this is what is saved
+  day: string | null; // the local day this daily was issued on; null for practice. A streak day is this day, not the day it was finished
   finished: boolean; // solved, so it is not logged again as unfinished when a sprint ends
 }
 
-const newAttempt = (p: PublicPuzzle): Attempt => ({
+const newAttempt = (p: PublicPuzzle, day: string | null = null): Attempt => ({
   solveId: crypto.randomUUID(),
   path: [startCell(p)],
   t0: null,
@@ -151,10 +183,12 @@ const newAttempt = (p: PublicPuzzle): Attempt => ({
   lastWasUndo: false,
   device: null,
   mode: "regular",
+  estimate: undefined,
+  day,
   finished: false,
 });
 
-export default function ZipGame({ puzzles, coreCount, prediction, demo = false }: { puzzles: PublicPuzzle[]; coreCount: number; prediction: TimeInfo | null; demo?: boolean }) {
+export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles: PublicPuzzle[]; prediction: TimeInfo | null; demo?: boolean }) {
   // A new player lands on a puzzle with the tutorial on top, skippable with one tap. People who already played
   // (a solve, or the old start screen answered) never see it unless they open "How to play".
   const [tutorial, setTutorial] = useState(() => !demo && !tutorialSeen() && !startDone() && readList(DONE_KEY).length === 0);
@@ -163,16 +197,37 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [streakDays, setStreakDays] = useState<string[]>(() => readList(STREAK_KEY));
   // Regular is the default. Extreme is the sprint; the presenter screen is always Regular.
   const [mode, setMode] = useState<Mode>(() => (demo ? "regular" : readMode()));
-  const sprintPuzzles = useMemo(() => sprintOrder(puzzles), [puzzles]);
-  const [puzzle, setPuzzle] = useState<PublicPuzzle>(() => (mode === "extreme" ? sprintPuzzles[0] : pickPuzzle(puzzles, coreCount, undefined, demo)));
-  const [path, setPath] = useState<Cell[]>(() => [startCell(puzzle)]);
-  const [status, setStatus] = useState<Status>("idle");
-  const [elapsed, setElapsed] = useState(0);
-  const [backtracks, setBacktracks] = useState(0);
-  const [submit, setSubmit] = useState<Submit>("none");
-  const [stuck, setStuck] = useState<Cell | null>(null);
+  // The daily pool is every "daily-NNN" puzzle; everything else is the original pool, which is now practice and Extreme.
+  const { dailies, practice } = useMemo(() => splitPuzzles(puzzles), [puzzles]);
+  const practiceIds = useMemo(() => new Set(practice.map((p) => p.id)), [practice]);
+  const dailyIds = useMemo(() => new Set(dailies.map((p) => p.id)), [dailies]);
+  const sprintPuzzles = useMemo(() => sprintOrder(practice), [practice]);
+  // A regular visit opens on today's daily (or on its result, when it was solved earlier today). The demo and Extreme do not.
+  const [entry] = useState<Entry>(() =>
+    demo
+      ? { puzzle: pickPractice(practice), track: "practice", day: null, saved: null }
+      : mode === "extreme"
+        ? { puzzle: sprintPuzzles[0], track: "practice", day: null, saved: null }
+        : dailyEntry(dailies, practice, new Date()),
+  );
+  const [puzzle, setPuzzle] = useState<PublicPuzzle>(entry.puzzle);
+  const [track, setTrack] = useState<Track>(entry.track);
+  const [dailyDay, setDailyDay] = useState<string | null>(entry.day); // mirrors attempt.day for the countdown
+  // The result being shown again after a revisit. The prediction on that card is the one saved with it, not a new one.
+  const [restored, setRestored] = useState<DailyResult | null>(entry.saved);
+  const [path, setPath] = useState<Cell[]>(() => entry.saved?.path ?? [startCell(entry.puzzle)]);
+  const [status, setStatus] = useState<Status>(entry.saved ? "solved" : "idle");
+  const [elapsed, setElapsed] = useState(entry.saved?.ms ?? 0);
+  const [backtracks, setBacktracks] = useState(entry.saved?.backtracks ?? 0);
+  const [submitState, setSubmit] = useState<Submit>(entry.saved?.saved ? "saved" : "none");
+  const [stuck, setStuck] = useState<Cell | null>(entry.saved?.stuck ?? null);
+  // A restored daily the server has since confirmed (see flushQueue below) counts as saved, wherever the state came from.
+  const submit: Submit = restored?.saved ? "saved" : submitState;
   // Facts about the solve that just ended, for the result card. Cleared with the next attempt.
-  const [solveInfo, setSolveInfo] = useState<{ solveId: string; pauseMs: number | null; firstSolve: boolean; mode: Mode; bestMs: number | null; previousBest: number | null; newBest: boolean } | null>(null);
+  type SolveInfo = { solveId: string; pauseMs: number | null; firstSolve: boolean; mode: Mode; bestMs: number | null; previousBest: number | null; newBest: boolean };
+  const [solveInfo, setSolveInfo] = useState<SolveInfo | null>(() =>
+    entry.saved ? { solveId: entry.saved.solve_id, pauseMs: entry.saved.pause_ms, firstSolve: entry.saved.first_solve, mode: "regular", bestMs: null, previousBest: null, newBest: false } : null,
+  );
   const [copied, setCopied] = useState(false);
   const [shareFallback, setShareFallback] = useState<string | null>(null); // the message, shown when neither share sheet nor clipboard worked
   // Predicted stuck cells arrive only after the solve ends, tagged with their puzzle so a late reply is ignored.
@@ -191,6 +246,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const [rulesSeen, setRulesSeen] = useState(sprintRulesSeen);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [tick, setTick] = useState(0); // performance.now() at the last clock tick, so the countdown re-renders
+  const [nowMs, setNowMs] = useState(() => Date.now()); // wall clock, ticking once a second while the daily result shows its countdown
   const [finish, setFinish] = useState<FinishEvent | null>(null); // the spark burst over the board
   const [bgEvent, setBgEvent] = useState<BgEvent | null>(null); // a win or a timeout, for the background to react to
   const [heat, setHeat] = useState<{ id: string; cells: { r: number; c: number; n: number }[]; total: number } | null>(null);
@@ -199,29 +255,66 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const locked = status === "solved" || (mode === "extreme" && run?.phase !== "running");
   const canChangeMode = run?.phase === "running" ? false : mode === "extreme" || status === "idle";
 
-  const attempt = useRef<Attempt>(newAttempt(puzzle));
+  const attempt = useRef<Attempt>(newAttempt(entry.puzzle, entry.day));
   const dragging = useRef(false);
   const board = useRef<HTMLDivElement>(null);
 
-  // Null when there is no model, no entry for this puzzle, or a bad number: the game then shows no prediction.
-  const predicted = useMemo(() => {
+  // The model's own number for this puzzle and player. Null when there is no model, no entry for this puzzle, or a bad number.
+  const modelEstimate = useMemo(() => {
     const z = prediction?.logByPuzzle[puzzle.id];
     if (!prediction || z === undefined) return null;
     const value = timeValue(z, prediction.players, demo ? volunteer : getPlayerId());
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: prediction.label === "human_time" ? ("ms" as const) : ("solver_steps" as const), version: prediction.version };
   }, [prediction, puzzle.id, demo, volunteer]);
+  // Crowd medians per puzzle, fetched once. They only count in Regular mode outside the demo.
+  const [medians, setMedians] = useState<Medians>({});
+  const live = useMemo(
+    () => chooseEstimate({ model: modelEstimate, crowd: demo || mode === "extreme" ? undefined : medians[puzzle.id] }),
+    [modelEstimate, medians, puzzle.id, demo, mode],
+  );
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
+  // From the first move on the target is locked: medians that arrive later change neither the line nor what is saved.
+  const [lockedEstimate, setLockedEstimate] = useState<Estimate | null | undefined>(undefined);
+  // What the player sees and what is saved. On a revisit it is the one saved with that result.
+  const predicted: Estimate | null = restored ? (restored.pred ? estimateFromSaved(restored.pred) : null) : lockEstimate(lockedEstimate, live);
+  // What it is: the crowd median, a time from the model (human_time), or a solver-step count (solver_effort).
+  const predLabel = predicted ? (predicted.source === "crowd" ? ("crowd" as const) : predicted.unit === "ms" ? ("human_time" as const) : ("solver_effort" as const)) : null;
 
   const { n, dots } = puzzle;
-  const number = puzzles.findIndex((p) => p.id === puzzle.id) + 1;
-  const isCore = number <= coreCount;
+  const position = practice.findIndex((p) => p.id === puzzle.id) + 1; // practice number; 0 for a daily
+  const title = puzzleTitle(puzzle.id, position);
+  const poolIds = isDailyId(puzzle.id) ? dailyIds : practiceIds;
   const labelAt = useMemo(() => new Map(dots.map(([r, c, v]) => [r * n + c, v])), [dots, n]);
 
-  // Resend solves that could not be saved on an earlier visit.
+  // Resend solves that could not be saved on an earlier visit. A daily that gets through now is remembered as saved
+  // (only the one with that solve id), so its share link points at the result page, also on the screen already showing it.
   useEffect(() => {
-    void flushQueue();
+    void flushQueue().then(({ saved }) => {
+      if (saved.length === 0) return;
+      for (const id of saved) markDailySaved(id);
+      setRestored((r) => withSaved(r, saved));
+    });
     void retryPendingNickname(); // a nickname that could not be saved last time
   }, []);
+
+  // The typical time per puzzle, once. Any failure just means no crowd median: the line stays as the model alone makes it.
+  useEffect(() => {
+    if (demo) return;
+    let alive = true;
+    fetch("/api/medians")
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((body: unknown) => {
+        if (alive) setMedians(parseMedians(body));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [demo]);
 
   useEffect(() => {
     if (status !== "playing") return;
@@ -238,7 +331,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       const ms = Math.round(solveMs);
       if (a.startedAtMs === null || ms < MIN_LOG_MS || ms > MAX_LOG_MS) {
         if (completed) setSubmit("failed");
-        return;
+        return "failed" as const;
       }
       if (completed) setSubmit("sending");
       const result = await submitSolve({
@@ -253,25 +346,35 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         played_zip_before: readZipBefore(),
         mode: a.mode,
         extreme_limit_ms: null, // a sprint has one clock for the whole run, not one per puzzle
-        prediction: predicted ? { value: predicted.value, unit: predicted.unit, model_version: predicted.version } : null,
+        prediction: a.estimate ? toPrediction(a.estimate) : null,
       });
       if (completed) setSubmit(result);
+      return result;
     },
-    [puzzle.id, puzzle.n, predicted, demo, volunteer],
+    [puzzle.id, puzzle.n, demo, volunteer],
   );
 
   // Show a puzzle with a fresh attempt: the shared reset for "next puzzle", sprint advances and mode switches.
-  const loadPuzzle = useCallback((p: PublicPuzzle) => {
-    attempt.current = newAttempt(p);
+  // `to` says which track the puzzle is on, and for a saved daily result carries the result to show again.
+  const loadPuzzle = useCallback((p: PublicPuzzle, to: Pick<Entry, "track" | "day" | "saved"> = { track: "practice", day: null, saved: null }) => {
+    const saved = to.saved;
+    attempt.current = newAttempt(p, to.day);
     dragging.current = false;
     setPuzzle(p);
-    setPath([startCell(p)]);
-    setStatus("idle");
-    setElapsed(0);
-    setBacktracks(0);
-    setSubmit("none");
-    setStuck(null);
-    setSolveInfo(null);
+    setTrack(to.track);
+    setDailyDay(to.day);
+    setRestored(saved);
+    setLockedEstimate(undefined);
+    setNowMs(Date.now());
+    setPath(saved?.path ?? [startCell(p)]);
+    setStatus(saved ? "solved" : "idle");
+    setElapsed(saved?.ms ?? 0);
+    setBacktracks(saved?.backtracks ?? 0);
+    setSubmit(saved?.saved ? "saved" : "none");
+    setStuck(saved?.stuck ?? null);
+    setSolveInfo(
+      saved ? { solveId: saved.solve_id, pauseMs: saved.pause_ms, firstSolve: saved.first_solve, mode: "regular", bestMs: null, previousBest: null, newBest: false } : null,
+    );
     setFinish(null);
     setPredStuck(null);
     setCopied(false);
@@ -346,17 +449,13 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   }, [mode, status, run, advanceSprint]);
 
   // Ask for the predicted stuck cells once the solve is over. Any failure just means no overlay.
-  const fetchStuck = useCallback(async (id: string) => {
-    try {
-      const res = await fetch(`/api/stuck?puzzle_id=${encodeURIComponent(id)}`);
-      if (!res.ok) return;
-      const body: unknown = await res.json();
-      const raw = (body as { cells?: unknown }).cells;
-      if (!Array.isArray(raw)) return;
-      const cells = raw.filter((c): c is Cell => Array.isArray(c) && c.length === 2 && c.every((v) => Number.isInteger(v)));
-      if (cells.length) setPredStuck({ id, cells });
-    } catch {}
-  }, []);
+  const fetchStuck = useCallback(
+    (id: string) =>
+      loadStuckCells(id).then((cells) => {
+        if (cells.length) setPredStuck({ id, cells });
+      }),
+    [],
+  );
 
   // Demo: where earlier solvers got stuck on this puzzle. Any failure just means no heatmap.
   const fetchHeat = useCallback(async (id: string) => {
@@ -368,6 +467,11 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     } catch {}
   }, []);
 
+  // A daily solved earlier today comes back as its result card; its predicted stuck cells are asked for again.
+  useEffect(() => {
+    if (entry.saved) void fetchStuck(entry.saved.puzzle_id);
+  }, [entry, fetchStuck]);
+
   // Apply a new path and record what changed.
   const commit = useCallback(
     (next: Cell[], kind: "extend" | "undo" | "clear") => {
@@ -377,6 +481,8 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         a.t0 = now;
         a.startedAtMs = Date.now();
         a.mode = mode === "extreme" ? "extreme" : "regular";
+        a.estimate = lockEstimate(a.estimate, liveRef.current);
+        setLockedEstimate(a.estimate);
         setStatus("playing");
       }
       if (kind !== "extend" && !a.lastWasUndo) {
@@ -403,6 +509,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         setBgEvent({ kind: "win", id: Date.now() });
         setFinish({ id: Date.now(), kind: finishKind(a.mode === "extreme" ? "sprint" : "win"), at: next[next.length - 1] });
         const { cell: stuckCell, maxPauseMs } = findStuck(a.events);
+        const firstSolve = demo || readList(DONE_KEY).length === 0;
         setStuck(stuckCell);
         // Personal best per grid size and mode, on this device only. The demo screen has no "you", so no best.
         const key = bestKey(n, a.mode);
@@ -411,7 +518,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         setSolveInfo({
           solveId: a.solveId,
           pauseMs: maxPauseMs,
-          firstSolve: demo || readList(DONE_KEY).length === 0, // each demo volunteer is a fresh player
+          firstSolve, // each demo volunteer is a fresh player
           mode: a.mode,
           bestMs: rec ? (rec.map[key] ?? null) : null,
           previousBest: rec?.previous ?? null,
@@ -420,19 +527,30 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         dragging.current = false;
         addToList(SEEN_KEY, puzzle.id);
         setDone(addToList(DONE_KEY, puzzle.id));
-        const days = addDay(readList(STREAK_KEY), new Date());
-        try {
-          localStorage.setItem(STREAK_KEY, JSON.stringify(days));
-        } catch {}
-        setStreakDays(days);
+        // Only the daily keeps the streak (the day it was issued, even if it was finished after midnight), and only it is
+        // remembered as today's result. Practice, Extreme and the demo leave both alone.
+        let daily: DailyResult | null = null;
+        if (track === "daily" && a.mode !== "extreme" && !demo && a.day) {
+          daily = {
+            day: a.day, puzzle_id: puzzle.id, solve_id: a.solveId, ms, backtracks: a.backtracks, pause_ms: maxPauseMs, stuck: stuckCell, path: next,
+            pred: a.estimate ? toPrediction(a.estimate) : null, saved: false, first_solve: firstSolve,
+          };
+          writeDailyResult(daily);
+          setNowMs(Date.now());
+          const days = addDay(readList(STREAK_KEY), a.day);
+          writeLocal(STREAK_KEY, JSON.stringify(days));
+          setStreakDays(days);
+        }
         a.finished = true;
         if (a.mode === "extreme" && r && r.phase === "running") setRun({ ...r, score: r.score + 1, index: r.index + 1 });
-        void send(true, ms);
+        void send(true, ms).then((result) => {
+          if (daily && result === "saved") markDailySaved(daily.solve_id);
+        });
         if (a.mode !== "extreme") void fetchStuck(puzzle.id); // the result card is the only place stuck cells show
         if (demo) void fetchHeat(puzzle.id);
       }
     },
-    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, mode, endRun, setRun],
+    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, mode, endRun, setRun, track],
   );
 
   // Drag the path head onto `target`: see planMove in lib/zip.ts.
@@ -485,20 +603,31 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     commit(attempt.current.path.slice(0, -1), "undo");
   };
 
-  // Regular and demo: the next puzzle. (A sprint advances by itself, see advanceSprint.)
-  const next = () => {
+  // Leaving a puzzle that is not solved. Log the abandoned attempt too: giving up is a difficulty signal.
+  const leave = () => {
     const a = attempt.current;
-    if (status !== "solved") {
-      // Log abandoned attempts too: giving up is a difficulty signal.
-      if (a.t0 !== null) void send(false, performance.now() - a.t0);
-      addToList(SEEN_KEY, puzzle.id);
-    }
-    const p = pickPuzzle(puzzles, coreCount, puzzle.id, demo);
+    if (status === "solved") return;
+    if (a.t0 !== null) void send(false, performance.now() - a.t0);
+    addToList(SEEN_KEY, puzzle.id);
+  };
+
+  // Practice and demo: the next original puzzle. From the daily this is the "Practice" button. (A sprint advances by itself, see advanceSprint.)
+  const next = () => {
+    leave();
+    const p = pickPractice(practice, puzzle.id);
     if (demo) {
       setVolunteer(crypto.randomUUID());
       setHeat(null);
     }
     loadPuzzle(p);
+  };
+
+  // Today's daily: a fresh one, or its result when it was already solved today. Also what a new day switches to.
+  const showDaily = () => {
+    leave();
+    const e = dailyEntry(dailies, practice, new Date());
+    loadPuzzle(e.puzzle, e);
+    if (e.saved) void fetchStuck(e.puzzle.id);
   };
 
   const chooseMode = (m: Mode) => {
@@ -510,7 +639,9 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       setRun({ phase: "ready" });
     } else {
       setRun(null);
-      loadPuzzle(pickPuzzle(puzzles, coreCount, puzzle.id));
+      const e = dailyEntry(dailies, practice, new Date());
+      loadPuzzle(e.puzzle, e);
+      if (e.saved) void fetchStuck(e.puzzle.id);
     }
   };
 
@@ -542,7 +673,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   const shareResult = () => {
     const origin = window.location.origin;
     const link = submit === "saved" && solveInfo ? `${origin}${sharePath(solveInfo.solveId)}` : origin;
-    return shareOut(shareMessage(`Yomi #${number}`, elapsed, backtracks, link));
+    return shareOut(shareMessage(shareLabel(puzzle.id, position), elapsed, backtracks, link));
   };
   const shareScore = () => {
     if (run?.phase === "over") return shareOut(shareScoreMessage(run.score, Math.round(run.durationMs / 1000), window.location.origin));
@@ -554,14 +685,26 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
   };
 
   const today = new Date();
-  const streak = streakState(streakDays, today);
+  // The streak counts days whose daily was solved. Days saved before the daily existed meant "any solve" and are ignored.
+  const streak = streakState(daysFrom(streakDays, DAILY_FIRST_DAY), today);
+  const dailyDone = !demo && mode !== "extreme" && track === "daily" && status === "solved";
+  const todayDaily = dailies[dailyIndex(today, dailies.length)];
+  // The countdown to the next daily. It ticks once a second, and only while it is on screen.
+  useEffect(() => {
+    if (!dailyDone) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [dailyDone]);
+  const nowDate = new Date(nowMs);
+  const nextDailyIn = msUntilNextDay(nowDate);
+  const newDayReady = dailyDay !== null && localDay(nowDate) !== dailyDay; // midnight passed while the result was on screen
   // How the solve compared with the prediction: a headline (percent faster/slower) plus one explanation line.
   const gapInput: GapInput | null =
-    status === "solved" && prediction && predicted && solveInfo
+    status === "solved" && predicted && predLabel && solveInfo
       ? {
           actualMs: elapsed,
           predicted: { value: predicted.value, unit: predicted.unit },
-          label: prediction.label,
+          label: predLabel,
           backtracks,
           pause: solveInfo.pauseMs === null ? null : { ms: solveInfo.pauseMs, cell: stuck },
           dots,
@@ -586,18 +729,23 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
     {menuOpen && !demo && (
       <GameMenu
         onClose={() => setMenuOpen(false)}
-        puzzleLabel={mode === "extreme" ? `Extreme run · ${durationLabel(sprintSecs)}` : `${isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · ${n}×${n}`}
+        puzzleLabel={mode === "extreme" ? `Extreme run · ${durationLabel(sprintSecs)}` : `${title} · ${n}×${n}`}
         solved={done.length}
         streak={{ count: streak.count, atRisk: streak.atRisk }}
         mode={mode}
         canChangeMode={canChangeMode}
         canSkip={mode !== "extreme" || run?.phase === "running"}
         onMode={chooseMode}
-        skipLabel={status === "solved" ? "Next puzzle" : "Skip this puzzle"}
+        skipLabel={track === "daily" && mode !== "extreme" ? (status === "solved" ? "Practice" : "Practice instead") : status === "solved" ? "Next puzzle" : "Skip this puzzle"}
         onSkip={() => {
           setMenuOpen(false);
           if (mode === "extreme") skipSprint();
           else next();
+        }}
+        dailyLabel={mode !== "extreme" && track === "practice" && todayDaily ? `Today's ${puzzleTitle(todayDaily.id, 0)}` : undefined}
+        onDaily={() => {
+          setMenuOpen(false);
+          showDaily();
         }}
         canHowTo={status !== "playing" && run?.phase !== "running"}
         onHowTo={() => {
@@ -613,7 +761,7 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
       {demo ? (
         <div className="flex w-full items-baseline justify-between font-mono text-lg">
           <span>
-            {isCore ? `Yomi #${number} of ${coreCount}` : `Practice #${number}`} · {n}×{n}
+            {title} · {n}×{n}
           </span>
           <span className="text-5xl tabular-nums">{clock(elapsed)}</span>
           <span className="opacity-70">{done.length} solved</span>
@@ -651,22 +799,38 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
         </div>
       )}
 
-      {prediction && predicted && status !== "solved" && mode !== "extreme" && (demo ? (
-        <p className="text-center text-xl leading-snug" data-testid="prediction">
-          {prediction.label === "human_time" ? (
-            <>Yomi predicts <b>{showPrediction(prediction, predicted.value)}</b>. Can you beat it?</>
-          ) : (
-            <>
-              Yomi&apos;s read: <b>{difficultyWord(prediction, puzzle.id)}</b> ({showPrediction(prediction, predicted.value)} for a computer,
-              not your time)
-            </>
-          )}
+      {!demo && mode !== "extreme" && (
+        <p className="font-mono text-xs opacity-70" data-testid="puzzle-label">
+          {title} · {n}×{n}
+          {track === "daily" ? " · daily" : ""}
         </p>
+      )}
+
+      {predicted && predLabel && status !== "solved" && mode !== "extreme" && (demo ? (
+        prediction && predLabel !== "crowd" && (
+          <p className="text-center text-xl leading-snug" data-testid="prediction">
+            {predLabel === "human_time" ? (
+              <>Yomi predicts <b>{showPrediction(predLabel, predicted.value)}</b>. Can you beat it?</>
+            ) : (
+              <>
+                Yomi&apos;s read: <b>{difficultyWord(prediction, puzzle.id, poolIds)}</b> ({showPrediction(predLabel, predicted.value)} for a computer,
+                not your time)
+              </>
+            )}
+          </p>
+        )
       ) : (
-        <div className="w-full rounded-xl border-2 border-orange-500/40 bg-orange-500/10 px-3 py-2 text-center" data-testid="prediction">
-          <p className="text-base font-bold leading-snug">{targetCopy(prediction.label, predicted.value, difficultyWord(prediction, puzzle.id)).headline}</p>
-          <p className="text-xs opacity-80">{targetCopy(prediction.label, predicted.value, difficultyWord(prediction, puzzle.id)).note}</p>
-        </div>
+        (() => {
+          const copy = predLabel === "crowd" ? targetCopy("crowd", predicted.value, "", predicted.n ?? 0) : prediction ? targetCopy(predLabel, predicted.value, difficultyWord(prediction, puzzle.id, poolIds)) : null;
+          return (
+            copy && (
+              <div className="w-full rounded-xl border-2 border-orange-500/40 bg-orange-500/10 px-3 py-2 text-center" data-testid="prediction">
+                <p className="text-base font-bold leading-snug">{copy.headline}</p>
+                <p className="text-xs opacity-80">{copy.note}</p>
+              </div>
+            )
+          );
+        })()
       ))}
 
       {!demo && status !== "solved" && (mode !== "extreme" || run?.phase === "running") && (
@@ -877,18 +1041,18 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
                 <StreakChip count={streak.count} atRisk={false} />
               </div>
             )}
-            {prediction && predicted && (
+            {predicted && predLabel && (
               <p className={demo ? "text-xl" : "text-sm"} data-testid="pred-vs-actual">
-                {prediction.label === "human_time" ? (
+                {predLabel === "human_time" || predLabel === "crowd" ? (
                   <>
-                    Yomi predicted <b>{clock(predicted.value)}</b>. You: <b>{clock(elapsed)}</b>.{" "}
+                    {predLabel === "crowd" ? "Crowd median" : "Yomi predicted"} <b>{clock(predicted.value)}</b>. You: <b>{clock(elapsed)}</b>.{" "}
                     {elapsed <= predicted.value
                       ? `You beat it by ${Math.max(1, Math.round((predicted.value - elapsed) / 1000))}s.`
                       : `It was ahead by ${Math.max(1, Math.round((elapsed - predicted.value) / 1000))}s.`}
                   </>
                 ) : (
                   <>
-                    Yomi predicted <b>{showPrediction(prediction, predicted.value)}</b> for a computer (not a time). You: <b>{clock(elapsed)}</b>.
+                    Solver effort: <b>{showPrediction(predLabel, predicted.value)}</b> for a computer (not a time). You: <b>{clock(elapsed)}</b>.
                   </>
                 )}
               </p>
@@ -919,21 +1083,35 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
               {(submit === "queued" || submit === "failed") && <p className="text-xs opacity-70">This solve is not saved yet, so the message links to the site instead of this result.</p>}
               {shareFallback && <code className="select-all break-all rounded-md bg-foreground/10 px-3 py-1.5 text-xs" data-testid="share-fallback">{shareFallback}</code>}
             </div>
-            <div className="flex flex-col items-center gap-1" aria-label={`Solved ${streak.week.filter(Boolean).length} of the last 7 days`}>
-              <div className="flex gap-1.5">
-                {streak.week.map((hit, i) => (
-                  <div key={i} className="flex flex-col items-center gap-0.5">
-                    <span
-                      className={`h-5 w-5 rounded-full border ${hit ? "border-orange-500 bg-orange-500" : "border-foreground/25"} ${i === 6 ? "ring-2 ring-orange-300" : ""}`}
-                    />
-                    <span className="font-mono text-[10px] opacity-70">{dayLetter(6 - i)}</span>
-                  </div>
-                ))}
+            {dailyDone && (
+              <div className="flex flex-col items-center gap-1" aria-label={`Solved ${streak.week.filter(Boolean).length} of the last 7 days`}>
+                <div className="flex gap-1.5">
+                  {streak.week.map((hit, i) => (
+                    <div key={i} className="flex flex-col items-center gap-0.5">
+                      <span
+                        className={`h-5 w-5 rounded-full border ${hit ? "border-orange-500 bg-orange-500" : "border-foreground/25"} ${i === 6 ? "ring-2 ring-orange-300" : ""}`}
+                      />
+                      <span className="font-mono text-[10px] opacity-70">{dayLetter(6 - i)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs">{streak.count === 1 ? "Day 1 of your streak." : `${streak.count} days in a row 🔥`}</p>
               </div>
-              <p className="text-xs">
-                {streak.count === 1 ? "Day 1. Come back tomorrow to start a streak." : `${streak.count} days in a row 🔥 Come back tomorrow to keep it.`}
+            )}
+            {dailyDone && (
+              <p className="text-sm" data-testid="daily-next">
+                {newDayReady ? (
+                  <b>A new Yomi is ready.</b>
+                ) : (
+                  <>
+                    Next Yomi in{" "}
+                    <b className="font-mono tabular-nums" data-testid="countdown">
+                      {formatCountdown(nextDailyIn)}
+                    </b>
+                  </>
+                )}
               </p>
-            </div>
+            )}
             </>)}
             <p className="text-xs opacity-70">
               {submit === "sending" && "Saving…"}
@@ -943,14 +1121,26 @@ export default function ZipGame({ puzzles, coreCount, prediction, demo = false }
             </p>
             {!demo && (
               // The one primary action. Sticky, so it stays in reach however long the card is on a small phone.
-              <button
-                onClick={next}
-                autoFocus
-                className="sticky bottom-3 z-10 mt-2 min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 text-lg font-semibold text-white shadow-lg"
-                data-testid="next"
-              >
-                Next puzzle
-              </button>
+              <div className="sticky bottom-3 z-10 mt-2 flex w-full flex-col gap-2">
+                {dailyDone && newDayReady && todayDaily ? (
+                  <button onClick={showDaily} className="min-h-12 w-full rounded-xl bg-orange-500 px-4 py-3 text-lg font-semibold text-white shadow-lg" data-testid="new-daily">
+                    Play {puzzleTitle(todayDaily.id, 0)}
+                  </button>
+                ) : null}
+                {!dailyDone && track === "practice" && todayDaily && !streak.doneToday && (
+                  <button onClick={showDaily} className="min-h-11 w-full rounded-xl border border-orange-500 bg-background px-4 py-2 font-semibold text-orange-600 shadow" data-testid="play-daily">
+                    Play today&apos;s {puzzleTitle(todayDaily.id, 0)}
+                  </button>
+                )}
+                <button
+                  onClick={next}
+                  autoFocus={!dailyDone}
+                  className={`min-h-12 w-full rounded-xl px-4 py-3 text-lg font-semibold shadow-lg ${dailyDone && newDayReady ? "border border-foreground/30 bg-background" : "bg-orange-500 text-white"}`}
+                  data-testid={dailyDone ? "practice" : "next"}
+                >
+                  {dailyDone ? "Practice" : "Next puzzle"}
+                </button>
+              </div>
             )}
           </div>
         )}

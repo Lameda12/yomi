@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { FEATURE_INFO, featureEffects, improvementVerdict, labelPlain, parseHistory, sameCoefficients, sketchPuzzle, type HistoryEntry } from "../lib/learn.ts";
+import { FEATURE_INFO, featureEffects, improvementVerdict, labelPlain, parseHistory, puzzlesFittedOn, sameCoefficients, sketchPuzzle, type HistoryEntry } from "../lib/learn.ts";
 import { PUZZLE_FEATURES, parseModel, puzzleFeatures, type Geometry } from "../lib/predict.ts";
 
 const read = (rel: string) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
@@ -69,8 +69,8 @@ test("featureEffects scales each coefficient by how much that feature varies acr
   assert.deepEqual(featureEffects(model, []), []);
 });
 
-test("the puzzle sketch agrees with the features stored for all 30 puzzles", () => {
-  assert.equal(puzzles.length, 30);
+test("the puzzle sketch agrees with the features stored for every puzzle, the 30 originals and the 120 dailies", () => {
+  assert.equal(puzzles.length, 150);
   for (const p of puzzles) {
     const s = sketchPuzzle(p);
     assert.equal(s.turns.length, p.features.turns, `${p.id} turns`);
@@ -78,4 +78,20 @@ test("the puzzle sketch agrees with the features stored for all 30 puzzles", () 
     assert.equal(s.longestGap.path.length, s.longestGap.steps + 1);
     assert.equal(s.dots.length, p.dots.length);
   }
+});
+
+test("which puzzles a model was fitted on: the originals before the daily pool existed, all of them after", () => {
+  const originals = ["a", "b"], all = ["a", "b", "daily-001"];
+  assert.deepEqual(puzzlesFittedOn("2026-10-22", originals, all), originals);
+  assert.deepEqual(puzzlesFittedOn("2026-11-02", originals, all), originals);
+  assert.deepEqual(puzzlesFittedOn("2026-11-03", originals, all), all); // the day the dailies arrived
+  assert.deepEqual(puzzlesFittedOn("2026-12-01", originals, all), all);
+  assert.equal(puzzlesFittedOn(undefined, originals, all), null); // no recorded run: unknown, so the page states no count
+  assert.equal(puzzlesFittedOn("not a date", originals, all), null);
+});
+
+test("the deployed model was trained before the daily pool, so it fitted only the 30 original puzzles", () => {
+  const originals = puzzles.filter((p) => !p.id.startsWith("daily-"));
+  assert.equal(originals.length, 30);
+  assert.equal(puzzlesFittedOn(history[history.length - 1].trained_at, originals, puzzles)?.length, 30);
 });

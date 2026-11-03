@@ -2,9 +2,11 @@
 // The honesty rules from CLAUDE.md apply: while the model is the solver-effort stand-in it predicts solver
 // steps, not a time, so the copy never turns it into one.
 import { clock } from "./clock.ts";
+import { MIN_HUMAN_SOLVES } from "./insights.ts";
 import type { Cell, Dot } from "./zip.ts";
 
-type Label = "solver_effort" | "human_time";
+// "crowd" is the typical time of everyone who solved the puzzle, used while the model only predicts solver steps.
+type Label = "solver_effort" | "human_time" | "crowd";
 
 export function ordinal(n: number): string {
   const mod100 = n % 100;
@@ -24,15 +26,21 @@ export function nearestDot(dots: Dot[], cell: Cell): number | null {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** What to show before the solve: a target to beat when the model predicts a time, a read of the grid when not. */
-export function targetCopy(label: Label, value: number, difficulty: string): { headline: string; note: string } {
+/**
+ * What to show before the solve: a target to beat when the model predicts a time or the crowd has a median for this
+ * puzzle, a read of the grid when neither. `n` is the number of SOLVES behind a crowd median (not players).
+ */
+export function targetCopy(label: Label, value: number, difficulty: string, n = 0): { headline: string; note: string } {
+  if (label === "crowd") {
+    return { headline: `Crowd median: ${clock(value)} (${plural(n, "solve")}). Beat it.`, note: "Typical time from previous recorded solves of this puzzle. Not an ML prediction. The clock starts on your first move." };
+  }
   if (label === "human_time") {
-    return { headline: `Target: beat ${clock(value)}`, note: "Yomi's guess for you. The clock starts on your first move." };
+    return { headline: `Target: beat ${clock(value)}`, note: "Predicted by Yomi's solve-time model. The clock starts on your first move." };
   }
   const challenge = difficulty === "on the easier side" ? "Can you make it look easy?" : difficulty === "on the harder side" ? "Think you can crack it?" : "Can you beat the read?";
   return {
-    headline: `Yomi's read: ${difficulty}. ${challenge}`,
-    note: `About ${Math.round(value)} solver steps for a computer, not a time. Yomi does not predict your time yet.`,
+    headline: `Solver effort: ${difficulty}. ${challenge}`,
+    note: `Difficulty for a computer (about ${Math.round(value)} solver steps), not how long you will take. Yomi does not predict human solve time yet.`,
   };
 }
 
@@ -72,12 +80,25 @@ export function gapParts(i: GapInput): GapParts {
   const story = facts.length ? `You ${facts.join(" and ")}` : null;
 
   // Solver steps are not a time, so there is no gap to explain; say what happened and what the model cannot do yet.
-  if (i.label !== "human_time" || !i.predicted || i.predicted.unit !== "ms" || !(i.predicted.value > 0)) {
-    const learning = "Yomi's guess is still in solver steps, not a time. It needs a retrain on 30+ real solves first.";
+  if ((i.label !== "human_time" && i.label !== "crowd") || !i.predicted || i.predicted.unit !== "ms" || !(i.predicted.value > 0)) {
+    const learning = `Yomi's guess is still in solver steps, not a time. It needs a retrain on ${MIN_HUMAN_SOLVES}+ real solves first.`;
     return { headline: null, detail: story ? `${story}. ${learning}` : `A clean run with no backtracks. ${learning}` };
   }
 
   const ratio = i.actualMs / i.predicted.value;
+  if (i.label === "crowd") {
+    // Measured against what other solves took, not against a model, so nothing here is "predicted" or "the model does not see".
+    if (ratio <= 1 - CLOSE) {
+      return { headline: { big: `${Math.round((1 - ratio) * 100)}%`, small: "faster than the crowd median", tone: "faster" }, detail: i.backtracks === 0 ? "No backtracks." : `Only ${plural(i.backtracks, "backtrack")}.` };
+    }
+    if (ratio >= 1 + CLOSE) {
+      return {
+        headline: { big: `${Math.round((ratio - 1) * 100)}%`, small: "slower than the crowd median", tone: "slower" },
+        detail: story ? `${story}.` : "A clean run, so this one was just slower than the typical solve.",
+      };
+    }
+    return { headline: { big: "Right on", small: "the crowd median", tone: "close" }, detail: story ? `Even though you ${facts.join(" and ")}.` : "Within 10% of the crowd median." };
+  }
   if (ratio <= 1 - CLOSE) {
     const pct = Math.round((1 - ratio) * 100);
     return {

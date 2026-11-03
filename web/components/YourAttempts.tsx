@@ -115,7 +115,7 @@ function Loaded({ mine }: { mine: Mine }) {
               <li key={a.solve_id ?? i} className="rounded-xl border border-foreground/15 p-3 text-sm">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-semibold">
-                    Puzzle {a.puzzle_number ?? "?"} · {a.grid_size}×{a.grid_size}
+                    {a.puzzle_title ?? "Puzzle ?"} · {a.grid_size}×{a.grid_size}
                     {a.mode === "extreme" && <span className="ml-2 rounded bg-orange-500/20 px-1.5 text-xs font-medium">sprint</span>}
                   </span>
                   <span className="text-xs opacity-60">{when(a.created_at)}</span>

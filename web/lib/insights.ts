@@ -1,12 +1,16 @@
 // Aggregate insights for the learn and stats pages. Pure functions over stored rows: no storage, no player ids in
 // anything they return. Every number here is computed from rows that exist; when there are too few rows the functions
 // say what is missing instead of returning a chart.
+import { CROWD_VERSION } from "./estimate.ts";
 import type { SolveRow } from "./store.ts";
 
 // What the training script needs before it will fit human solve time (ml/train_time.py MIN_HUMAN_SOLVES).
-export const MIN_HUMAN_SOLVES = 30;
+export const MIN_HUMAN_SOLVES = 15;
+// What the stuck-point model needs (ml/train_stuck.py MIN_STUCK_SOLVES). It has its own, higher floor.
+export const MIN_STUCK_SOLVES = 30;
 export const MIN_TRAIN_PLAYERS = 2;
-// ml/train_time.py EXCLUDED_ROW_IDS: the owner's own test plays, rows 1 to 8. A test checks the two stay in step.
+// ml/train_time.py EXCLUDED_ROW_IDS: the owner's own test plays, rows 1 to 8. Migration 007 marks them source = 'test',
+// which is also left out. A test checks the constants stay in step with the Python.
 export const EXCLUDED_ROW_ID_MAX = 8;
 
 // Provisional display rules for charts that compare the model with what happened. They are a guard against showing a
@@ -17,10 +21,18 @@ export const MIN_HEAT_SOLVES = 5; // finished solves of one puzzle before its st
 
 type Rows = readonly SolveRow[];
 
-/** The training script's filter: finished, timed, Regular mode, a puzzle we know, and not one of the early test rows. */
+/**
+ * The owner's early test plays: marked source = 'test' (migration 007), or, until 007 is applied, row ids 1 to 8.
+ * Training, the page counts and the crowd median all leave these out. Demo and local_import rows are real people and stay.
+ */
+export function isEarlyTestRow(r: { id: number; source?: string | null }): boolean {
+  return r.source === "test" || (r.id >= 1 && r.id <= EXCLUDED_ROW_ID_MAX);
+}
+
+/** The training script's filter: finished, timed, Regular mode, a puzzle we know, and not one of the early test rows (by id, or marked source = 'test'). */
 export function isTrainable(r: SolveRow, puzzleIds: ReadonlySet<string>): boolean {
   if (!r.completed || !Number.isFinite(r.solve_ms) || r.solve_ms <= 0) return false;
-  if (r.id >= 1 && r.id <= EXCLUDED_ROW_ID_MAX) return false;
+  if (isEarlyTestRow(r)) return false;
   if (!puzzleIds.has(r.puzzle_id)) return false;
   return (r.mode ?? "regular") === "regular";
 }
@@ -89,7 +101,7 @@ const absPctErr = (pred: number, actual: number) => Math.abs(pred - actual) / ac
  */
 export function liveEvaluation(rows: Rows, version: string, minPlayers = MIN_PLAYERS, minAttempts = MIN_ATTEMPTS): LiveEval {
   const mine = rows
-    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.pred_unit === "ms" && (r.pred_value ?? 0) > 0 && r.solve_ms > 0)
+    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.pred_unit === "ms" && (r.pred_value ?? 0) > 0 && r.solve_ms > 0 && r.model_version !== CROWD_VERSION)
     .sort((a, b) => a.id - b.id);
   const seen = new Set<string>();
   const first = mine.filter((r) => {

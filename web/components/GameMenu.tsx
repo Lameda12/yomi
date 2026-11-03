@@ -14,6 +14,8 @@ export interface MenuProps {
   onMode: (m: "regular" | "extreme") => void;
   onSkip: () => void;
   skipLabel: string;
+  dailyLabel?: string; // "Today's Yomi #7": a way back to the daily from practice. Absent when there is nothing to go back to
+  onDaily?: () => void;
   canSkip?: boolean; // not between sprint runs, when there is nothing to skip
   canHowTo: boolean; // not while a clock is running
   onHowTo: () => void;
@@ -57,7 +59,7 @@ export default function GameMenu(p: MenuProps) {
 
         {p.streak.count > 0 && (
           <p className="rounded-full bg-orange-500/15 px-3 py-1 text-center font-mono text-xs text-orange-700 dark:text-orange-300">
-            🔥 {p.streak.count}-day streak{p.streak.atRisk ? ". Solve one today to keep it" : ""}
+            🔥 {p.streak.count}-day streak{p.streak.atRisk ? ". Solve today's Yomi to keep it" : ""}
           </p>
         )}
 
@@ -81,6 +83,11 @@ export default function GameMenu(p: MenuProps) {
         {p.canSkip !== false && (
           <button onClick={p.onSkip} className={row}>
             {p.skipLabel}
+          </button>
+        )}
+        {p.dailyLabel && p.onDaily && (
+          <button onClick={p.onDaily} className={row} data-testid="menu-daily">
+            {p.dailyLabel}
           </button>
         )}
         <button onClick={p.onHowTo} disabled={!p.canHowTo} className={row}>

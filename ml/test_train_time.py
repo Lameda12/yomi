@@ -121,6 +121,35 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(len(solves_from_frame(df, set(PUZZLE_IDS), [], [])), 2)
 
 
+    def test_drops_rows_marked_as_test_but_keeps_demo_and_imported_rows(self) -> None:
+        import pandas as pd
+
+        from ml.train_stuck import stuck_solves_from_frame
+
+        pid = PUZZLE_IDS[0]
+        base = {"puzzle_id": pid, "solve_ms": 8000, "completed": True}
+        df = pd.DataFrame([
+            {"id": 20, "player_id": "owner", "source": "test", **base},  # an early test play: dropped
+            {"id": 21, "player_id": "a", "source": None, **base},
+            {"id": 22, "player_id": "b", "source": "demo", **base},  # a real volunteer: kept
+            {"id": 23, "player_id": "c", "source": "local_import", **base},  # a real person: kept
+            {"id": 24, "player_id": "d", **base},  # no source key at all (older file): kept
+        ])
+        # exclude_ids is emptied here so that only the source marker can be what drops the test row
+        got = solves_from_frame(df, set(PUZZLE_IDS), [], [])
+        self.assertEqual([p for p, _, _ in got], ["a", "b", "c", "d"])
+        self.assertEqual([p for p, _, _ in stuck_solves_from_frame(df, set(PUZZLE_IDS), [], [])], ["a", "b", "c", "d"])
+
+    def test_row_ids_1_to_8_stay_excluded_until_migration_007_is_applied(self) -> None:
+        import pandas as pd
+
+        pid = PUZZLE_IDS[0]
+        df = pd.DataFrame([
+            {"id": i, "player_id": "owner", "puzzle_id": pid, "solve_ms": 8000, "completed": True} for i in (1, 8, 9)
+        ])
+        self.assertEqual(len(solves_from_frame(df, set(PUZZLE_IDS))), 1)  # only id 9 survives, with the default EXCLUDED_ROW_IDS
+
+
 class ExportTests(unittest.TestCase):
     def test_round_trip_has_every_contract_key_in_order(self) -> None:
         model = train(fake_solves(MIN_HUMAN_SOLVES), PUZZLES)

@@ -1,5 +1,6 @@
 // "Your attempts": what one player's own stored rows say. Pure functions, safe to import in the browser. Everything
 // here is about the caller's own data, so there is no comparison with other players and no aggregate.
+import { CROWD_VERSION } from "./estimate.ts";
 import { median } from "./insights.ts";
 import type { GameEvent } from "./stuck.ts";
 
@@ -7,7 +8,8 @@ export interface Attempt {
   solve_id: string | null;
   created_at: string;
   puzzle_id: string;
-  puzzle_number: number | null; // the public number of the puzzle (its position in the list), when it still exists
+  puzzle_number: number | null; // the public number of a practice puzzle (its position in the original list); null for a daily
+  puzzle_title: string | null; // "Yomi #7" for a daily, "Practice #18" for a practice puzzle; null when the puzzle no longer exists
   grid_size: number;
   mode: "regular" | "extreme";
   completed: boolean;
@@ -85,6 +87,10 @@ export function guessLine(a: Attempt): string | null {
   const v = vsGuess(a);
   if (v) {
     const pct = Math.round(Math.abs(1 - v.ratio) * 100);
+    if (a.model_version === CROWD_VERSION) {
+      const gap = pct < 10 ? "close to it" : v.ratio < 1 ? `${pct}% faster than it` : `${pct}% slower than it`;
+      return `The crowd median was ${fmtClock(v.guess_ms)}. You took ${fmtClock(a.solve_ms)}, ${gap}.`;
+    }
     const gap = pct < 10 ? "close to" : v.ratio < 1 ? `${pct}% faster than` : `${pct}% slower than`;
     return `Yomi guessed ${fmtClock(v.guess_ms)}. You took ${fmtClock(a.solve_ms)}, ${gap} the guess.`;
   }

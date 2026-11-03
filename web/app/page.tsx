@@ -1,7 +1,7 @@
 import Link from "next/link";
 import GameLoader from "@/components/GameLoader";
 import { loadTimeInfo } from "@/lib/model";
-import { CORE_IDS, PUZZLES } from "@/lib/puzzles";
+import { PUZZLES } from "@/lib/puzzles";
 
 export default function Home() {
   // Solutions stay on the server; the client only needs the grid and dots.
@@ -11,7 +11,10 @@ export default function Home() {
       <h1 className="text-xl font-bold tracking-tight">
         Yomi <span className="text-orange-500">読み</span>
       </h1>
-      <GameLoader puzzles={publicPuzzles} coreCount={CORE_IDS.length} prediction={loadTimeInfo()} />
+      <p className="-mt-1.5 max-w-md text-center text-xs opacity-70" data-testid="framing">
+        What makes a puzzle hard for a person? Play today&apos;s Yomi and help us find out.
+      </p>
+      <GameLoader puzzles={publicPuzzles} prediction={loadTimeInfo()} />
       <footer className="mt-auto max-w-md text-center text-xs opacity-70">
         Solves are logged anonymously for a student ML project.{" "}
         <Link href="/what-we-store" className="underline">

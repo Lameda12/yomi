@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addDay, daysBefore, localDay, streakState } from "../lib/streak.ts";
+import { addDay, daysBefore, daysFrom, localDay, streakState } from "../lib/streak.ts";
 
 const at = (y: number, m: number, d: number) => new Date(y, m - 1, d, 15, 0);
 const TODAY = at(2026, 10, 22);
@@ -41,4 +41,25 @@ test("addDay is idempotent, sorted and bounded", () => {
   const many = Array.from({ length: 450 }, (_, i) => daysBefore(at(2026, 10, 21), i + 1));
   assert.equal(addDay(many, TODAY).length, 400);
   assert.equal(localDay(TODAY), "2026-10-22");
+});
+
+test("addDay also takes a day that is already a YYYY-MM-DD string", () => {
+  assert.deepEqual(addDay(["2026-10-21"], "2026-10-22"), ["2026-10-21", "2026-10-22"]);
+  assert.deepEqual(addDay(["2026-10-22"], "2026-10-22"), ["2026-10-22"]);
+});
+
+test("daysFrom drops days before the first daily and anything that is not a day", () => {
+  const stored = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-05", "nonsense", "2026-13-99x"];
+  assert.deepEqual(daysFrom(stored, "2026-11-03"), ["2026-11-03", "2026-11-05"]);
+  assert.deepEqual(daysFrom([], "2026-11-03"), []);
+});
+
+test("the streak counts only days the daily was solved: old any-solve days before the first daily do not chain into it", () => {
+  const before = ["2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02"]; // days with some solve, before there was a daily
+  const nov3 = at(2026, 11, 3);
+  assert.equal(streakState(before, nov3).atRisk, true); // unfiltered, the old days would look like a live 4-day streak
+  const s = streakState(addDay(daysFrom(before, "2026-11-03"), nov3), nov3);
+  assert.deepEqual([s.count, s.doneToday, s.atRisk], [1, true, false]);
+  const missed = streakState(addDay(daysFrom(before, "2026-11-03"), "2026-11-03"), at(2026, 11, 5));
+  assert.deepEqual([missed.count, missed.atRisk], [0, false]); // skipped Nov 4: the streak is over
 });

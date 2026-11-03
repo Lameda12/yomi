@@ -2,6 +2,7 @@
 // derived server-side from the move log), never numbers carried in the URL, so a link cannot be edited into a fake time.
 // This module is pure so the same copy runs in the game, the share page and the tests.
 import { clock } from "./clock.ts";
+import { CROWD_VERSION } from "./estimate.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -17,7 +18,7 @@ export interface SharedSolve {
   backtracks: number;
   mode: "regular" | "extreme";
   extreme_limit_ms: number | null;
-  pred: { value: number; unit: "ms" | "solver_steps" } | null;
+  pred: { value: number; unit: "ms" | "solver_steps"; crowd?: true } | null; // crowd: the target was the crowd median, not a model guess
   name: string; // the player's nickname, or their anonymous label
 }
 
@@ -33,6 +34,7 @@ export interface SharedSource {
   extreme_limit_ms?: number | null;
   pred_value?: number | null;
   pred_unit?: "ms" | "solver_steps" | null;
+  model_version?: string | null;
 }
 
 /** Public projection of a stored solve, or null when it is not a finished solve with an id. */
@@ -47,7 +49,9 @@ export function toShared(row: SharedSource, name: string): SharedSolve | null {
     backtracks: row.backtracks,
     mode: row.mode === "extreme" ? "extreme" : "regular",
     extreme_limit_ms: row.mode === "extreme" ? (row.extreme_limit_ms ?? null) : null,
-    pred: hasPred ? { value: row.pred_value as number, unit: row.pred_unit as "ms" | "solver_steps" } : null,
+    pred: hasPred
+      ? { value: row.pred_value as number, unit: row.pred_unit as "ms" | "solver_steps", ...(row.model_version === CROWD_VERSION ? { crowd: true as const } : {}) }
+      : null,
     name,
   };
 }
@@ -61,16 +65,15 @@ export function resultLine(s: SharedSolve): string {
 }
 
 /**
- * How the solve compared with Yomi's guess. Only when the model predicted a time: a solver-step count is not a time,
- * so it is never compared with one (the label honesty rule).
+ * How the solve compared with the target it was shown. Only when that target was a time: a solver-step count is not a
+ * time, so it is never compared with one (the label honesty rule). A crowd median is named as that, not as Yomi's guess.
  */
 export function predictionLine(s: SharedSolve): string | null {
   if (!s.pred || s.pred.unit !== "ms") return null;
   const diff = Math.round(Math.abs(s.solve_ms - s.pred.value) / 1000);
-  if (diff < 1) return `Yomi predicted ${clock(s.pred.value)}. Dead on.`;
-  return s.solve_ms <= s.pred.value
-    ? `Yomi predicted ${clock(s.pred.value)}. Beat it by ${diff}s.`
-    : `Yomi predicted ${clock(s.pred.value)}. It was ahead by ${diff}s.`;
+  const head = s.pred.crowd ? `Crowd median was ${clock(s.pred.value)}.` : `Yomi predicted ${clock(s.pred.value)}.`;
+  if (diff < 1) return `${head} Dead on.`;
+  return s.solve_ms <= s.pred.value ? `${head} Beat it by ${diff}s.` : `${head} It was ahead by ${diff}s.`;
 }
 
 /** Extreme only: how the solve went against the clock it played. */
