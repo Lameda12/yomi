@@ -1,5 +1,6 @@
 // "Your attempts": what one player's own stored rows say. Pure functions, safe to import in the browser. Everything
 // here is about the caller's own data, so there is no comparison with other players and no aggregate.
+import { CROWD_VERSION } from "./estimate.ts";
 import { median } from "./insights.ts";
 import type { GameEvent } from "./stuck.ts";
 
@@ -86,6 +87,10 @@ export function guessLine(a: Attempt): string | null {
   const v = vsGuess(a);
   if (v) {
     const pct = Math.round(Math.abs(1 - v.ratio) * 100);
+    if (a.model_version === CROWD_VERSION) {
+      const gap = pct < 10 ? "close to it" : v.ratio < 1 ? `${pct}% faster than it` : `${pct}% slower than it`;
+      return `The crowd median was ${fmtClock(v.guess_ms)}. You took ${fmtClock(a.solve_ms)}, ${gap}.`;
+    }
     const gap = pct < 10 ? "close to" : v.ratio < 1 ? `${pct}% faster than` : `${pct}% slower than`;
     return `Yomi guessed ${fmtClock(v.guess_ms)}. You took ${fmtClock(a.solve_ms)}, ${gap} the guess.`;
   }

@@ -79,6 +79,23 @@ test("prediction line: only a time prediction is compared with a time", () => {
   assert.equal(predictionLine(shared({ pred: { value: 3_200, unit: "ms" } })), "Yomi predicted 0:03. Dead on.");
 });
 
+test("a crowd-median target is described as the crowd median, never as Yomi's prediction", () => {
+  const crowd = { value: 10_000, unit: "ms" as const, crowd: true as const };
+  assert.equal(predictionLine(shared({ pred: crowd })), "Crowd median was 0:10. Beat it by 7s.");
+  assert.equal(predictionLine(shared({ pred: { ...crowd, value: 1_000 } })), "Crowd median was 0:01. It was ahead by 2s.");
+  assert.equal(predictionLine(shared({ pred: { ...crowd, value: 3_200 } })), "Crowd median was 0:03. Dead on.");
+  const row = { solve_id: randomUUID(), puzzle_id: "zip-5x5-01", grid_size: 5, solve_ms: 3000, backtracks: 0, completed: true, pred_value: 10_000, pred_unit: "ms" as const };
+  assert.equal(toShared({ ...row, model_version: "crowd-median" }, "Anon")?.pred?.crowd, true);
+  assert.equal(toShared({ ...row, model_version: "20261022-human_time-n40" }, "Anon")?.pred?.crowd, undefined);
+  assert.equal(toShared(row, "Anon")?.pred?.crowd, undefined, "an older row with no version is a model guess");
+});
+
+test("the stored model_version reaches the share page projection", async () => {
+  const row = base({ pred_value: 42_000, pred_unit: "ms", model_version: "crowd-median" });
+  assert.equal(await insertSolve(row), true);
+  assert.equal((await getSharedSolve(row.solve_id))!.pred?.crowd, true);
+});
+
 test("clock line only for an Extreme solve that beat its clock", () => {
   assert.equal(clockLine(shared()), null);
   assert.equal(clockLine(shared({ mode: "extreme", extreme_limit_ms: 60_000 })), "Beat the clock (1:00) by 0:57.");

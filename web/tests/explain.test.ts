@@ -110,3 +110,32 @@ test("objective line names the last dot", () => {
   assert.equal(objectiveLine(13), "Connect 1 to 13 in order and fill every cell");
   assert.equal(objectiveLine(4), "Connect 1 to 4 in order and fill every cell");
 });
+
+// ---- crowd median (the pre-solve target while the model predicts solver steps) ----------------------------------------
+
+const crowdBase: GapInput = { ...base, label: "crowd", predicted: { value: 50_000, unit: "ms" } };
+
+test("crowd target copy: the median, how many solves it rests on (solves, not players), and the challenge", () => {
+  const t = targetCopy("crowd", 38_000, "x", 5);
+  assert.equal(t.headline, "Crowd median: 0:38 (5 solves). Beat it.");
+  assert.match(t.note, /everyone who has solved this puzzle/);
+  assert.doesNotMatch(t.headline + t.note, /player|Yomi predicts|Yomi's guess/i, "a crowd median is not a Yomi prediction and not a player count");
+  assert.equal(targetCopy("crowd", 38_000, "x", 1).headline, "Crowd median: 0:38 (1 solve). Beat it.");
+});
+
+test("crowd gap: faster, slower and close are measured against the crowd median, never against Yomi's model", () => {
+  assert.deepEqual(gapParts(crowdBase).headline, { big: "40%", small: "faster than the crowd median", tone: "faster" });
+  const slow = gapParts({ ...crowdBase, actualMs: 70_000, backtracks: 4, pause: { ms: 9_000, cell: [2, 3] } });
+  assert.deepEqual(slow.headline, { big: "40%", small: "slower than the crowd median", tone: "slower" });
+  assert.equal(slow.detail, "You paused 9 s near the 3rd dot and backtracked 4 times.");
+  assert.doesNotMatch(slow.detail, /model|Yomi/);
+  assert.equal(gapParts({ ...crowdBase, actualMs: 70_000 }).detail, "A clean run, so this one was just slower than the typical solve.");
+  assert.deepEqual(gapParts({ ...crowdBase, actualMs: 52_000 }).headline, { big: "Right on", small: "the crowd median", tone: "close" });
+  assert.equal(explainGap(crowdBase), "You were 40% faster than the crowd median. No backtracks.");
+});
+
+test("a crowd label with a bad number falls back to the plain line, never a ratio", () => {
+  const p = gapParts({ ...crowdBase, predicted: { value: 0, unit: "ms" } });
+  assert.equal(p.headline, null);
+  assert.doesNotMatch(p.detail, /faster|slower|%/);
+});

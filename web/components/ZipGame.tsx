@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bestKey, readBest, recordBest, writeBest } from "@/lib/best";
 import { clock } from "@/lib/clock";
+import { chooseEstimate, estimateFromSaved, lockEstimate, parseMedians, toPrediction, type Estimate, type Medians } from "@/lib/estimate";
 import {
   DAILY_FIRST_DAY, dailyIndex, formatCountdown, isDailyId, markDailySaved, msUntilNextDay, puzzleTitle, readDailyResult, shareLabel, splitPuzzles, writeDailyResult, type DailyResult,
 } from "@/lib/daily";
@@ -167,6 +168,7 @@ interface Attempt {
   lastWasUndo: boolean;
   device: "mouse" | "touch" | null;
   mode: Mode; // locked at the first move, so the toggle cannot change an attempt in progress
+  estimate: Estimate | null | undefined; // the pre-solve target, locked at the first move (undefined until then); this is what is saved
   day: string | null; // the local day this daily was issued on; null for practice. A streak day is this day, not the day it was finished
   finished: boolean; // solved, so it is not logged again as unfinished when a sprint ends
 }
@@ -181,6 +183,7 @@ const newAttempt = (p: PublicPuzzle, day: string | null = null): Attempt => ({
   lastWasUndo: false,
   device: null,
   mode: "regular",
+  estimate: undefined,
   day,
   finished: false,
 });
@@ -254,17 +257,30 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
   const dragging = useRef(false);
   const board = useRef<HTMLDivElement>(null);
 
-  // Null when there is no model, no entry for this puzzle, or a bad number: the game then shows no prediction.
-  const predicted = useMemo(() => {
-    if (restored) return restored.pred ? { value: restored.pred.value, unit: restored.pred.unit, version: restored.pred.model_version } : null; // what was shown then
+  // The model's own number for this puzzle and player. Null when there is no model, no entry for this puzzle, or a bad number.
+  const modelEstimate = useMemo(() => {
     const z = prediction?.logByPuzzle[puzzle.id];
     if (!prediction || z === undefined) return null;
     const value = timeValue(z, prediction.players, demo ? volunteer : getPlayerId());
     if (!Number.isFinite(value) || value <= 0) return null;
     return { value, unit: prediction.label === "human_time" ? ("ms" as const) : ("solver_steps" as const), version: prediction.version };
-  }, [prediction, puzzle.id, demo, volunteer, restored]);
-  // What the prediction is: a time (human_time) or a solver-step count (solver_effort). Follows the saved prediction on a revisit.
-  const predLabel = predicted ? (predicted.unit === "ms" ? ("human_time" as const) : ("solver_effort" as const)) : null;
+  }, [prediction, puzzle.id, demo, volunteer]);
+  // Crowd medians per puzzle, fetched once. They only count in Regular mode outside the demo.
+  const [medians, setMedians] = useState<Medians>({});
+  const live = useMemo(
+    () => chooseEstimate({ model: modelEstimate, crowd: demo || mode === "extreme" ? undefined : medians[puzzle.id] }),
+    [modelEstimate, medians, puzzle.id, demo, mode],
+  );
+  const liveRef = useRef(live);
+  useEffect(() => {
+    liveRef.current = live;
+  }, [live]);
+  // From the first move on the target is locked: medians that arrive later change neither the line nor what is saved.
+  const [lockedEstimate, setLockedEstimate] = useState<Estimate | null | undefined>(undefined);
+  // What the player sees and what is saved. On a revisit it is the one saved with that result.
+  const predicted: Estimate | null = restored ? (restored.pred ? estimateFromSaved(restored.pred) : null) : lockEstimate(lockedEstimate, live);
+  // What it is: the crowd median, a time from the model (human_time), or a solver-step count (solver_effort).
+  const predLabel = predicted ? (predicted.source === "crowd" ? ("crowd" as const) : predicted.unit === "ms" ? ("human_time" as const) : ("solver_effort" as const)) : null;
 
   const { n, dots } = puzzle;
   const position = practice.findIndex((p) => p.id === puzzle.id) + 1; // practice number; 0 for a daily
@@ -277,6 +293,21 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
     void flushQueue();
     void retryPendingNickname(); // a nickname that could not be saved last time
   }, []);
+
+  // The typical time per puzzle, once. Any failure just means no crowd median: the line stays as the model alone makes it.
+  useEffect(() => {
+    if (demo) return;
+    let alive = true;
+    fetch("/api/medians")
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((body: unknown) => {
+        if (alive) setMedians(parseMedians(body));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [demo]);
 
   useEffect(() => {
     if (status !== "playing") return;
@@ -308,12 +339,12 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
         played_zip_before: readZipBefore(),
         mode: a.mode,
         extreme_limit_ms: null, // a sprint has one clock for the whole run, not one per puzzle
-        prediction: predicted ? { value: predicted.value, unit: predicted.unit, model_version: predicted.version } : null,
+        prediction: a.estimate ? toPrediction(a.estimate) : null,
       });
       if (completed) setSubmit(result);
       return result;
     },
-    [puzzle.id, puzzle.n, predicted, demo, volunteer],
+    [puzzle.id, puzzle.n, demo, volunteer],
   );
 
   // Show a puzzle with a fresh attempt: the shared reset for "next puzzle", sprint advances and mode switches.
@@ -326,6 +357,7 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
     setTrack(to.track);
     setDailyDay(to.day);
     setRestored(saved);
+    setLockedEstimate(undefined);
     setNowMs(Date.now());
     setPath(saved?.path ?? [startCell(p)]);
     setStatus(saved ? "solved" : "idle");
@@ -442,6 +474,8 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
         a.t0 = now;
         a.startedAtMs = Date.now();
         a.mode = mode === "extreme" ? "extreme" : "regular";
+        a.estimate = lockEstimate(a.estimate, liveRef.current);
+        setLockedEstimate(a.estimate);
         setStatus("playing");
       }
       if (kind !== "extend" && !a.lastWasUndo) {
@@ -492,7 +526,7 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
         if (track === "daily" && a.mode !== "extreme" && !demo && a.day) {
           daily = {
             day: a.day, puzzle_id: puzzle.id, solve_id: a.solveId, ms, backtracks: a.backtracks, pause_ms: maxPauseMs, stuck: stuckCell, path: next,
-            pred: predicted ? { value: predicted.value, unit: predicted.unit, model_version: predicted.version } : null, saved: false, first_solve: firstSolve,
+            pred: a.estimate ? toPrediction(a.estimate) : null, saved: false, first_solve: firstSolve,
           };
           writeDailyResult(daily);
           setNowMs(Date.now());
@@ -509,7 +543,7 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
         if (demo) void fetchHeat(puzzle.id);
       }
     },
-    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, mode, endRun, setRun, track, predicted],
+    [dots, n, puzzle.id, send, fetchStuck, fetchHeat, demo, mode, endRun, setRun, track],
   );
 
   // Drag the path head onto `target`: see planMove in lib/zip.ts.
@@ -765,22 +799,31 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
         </p>
       )}
 
-      {prediction && predicted && predLabel && status !== "solved" && mode !== "extreme" && (demo ? (
-        <p className="text-center text-xl leading-snug" data-testid="prediction">
-          {predLabel === "human_time" ? (
-            <>Yomi predicts <b>{showPrediction(predLabel, predicted.value)}</b>. Can you beat it?</>
-          ) : (
-            <>
-              Yomi&apos;s read: <b>{difficultyWord(prediction, puzzle.id, poolIds)}</b> ({showPrediction(predLabel, predicted.value)} for a computer,
-              not your time)
-            </>
-          )}
-        </p>
+      {predicted && predLabel && status !== "solved" && mode !== "extreme" && (demo ? (
+        prediction && predLabel !== "crowd" && (
+          <p className="text-center text-xl leading-snug" data-testid="prediction">
+            {predLabel === "human_time" ? (
+              <>Yomi predicts <b>{showPrediction(predLabel, predicted.value)}</b>. Can you beat it?</>
+            ) : (
+              <>
+                Yomi&apos;s read: <b>{difficultyWord(prediction, puzzle.id, poolIds)}</b> ({showPrediction(predLabel, predicted.value)} for a computer,
+                not your time)
+              </>
+            )}
+          </p>
+        )
       ) : (
-        <div className="w-full rounded-xl border-2 border-orange-500/40 bg-orange-500/10 px-3 py-2 text-center" data-testid="prediction">
-          <p className="text-base font-bold leading-snug">{targetCopy(predLabel, predicted.value, difficultyWord(prediction, puzzle.id, poolIds)).headline}</p>
-          <p className="text-xs opacity-80">{targetCopy(predLabel, predicted.value, difficultyWord(prediction, puzzle.id, poolIds)).note}</p>
-        </div>
+        (() => {
+          const copy = predLabel === "crowd" ? targetCopy("crowd", predicted.value, "", predicted.n ?? 0) : prediction ? targetCopy(predLabel, predicted.value, difficultyWord(prediction, puzzle.id, poolIds)) : null;
+          return (
+            copy && (
+              <div className="w-full rounded-xl border-2 border-orange-500/40 bg-orange-500/10 px-3 py-2 text-center" data-testid="prediction">
+                <p className="text-base font-bold leading-snug">{copy.headline}</p>
+                <p className="text-xs opacity-80">{copy.note}</p>
+              </div>
+            )
+          );
+        })()
       ))}
 
       {!demo && status !== "solved" && (mode !== "extreme" || run?.phase === "running") && (
@@ -993,9 +1036,9 @@ export default function ZipGame({ puzzles, prediction, demo = false }: { puzzles
             )}
             {predicted && predLabel && (
               <p className={demo ? "text-xl" : "text-sm"} data-testid="pred-vs-actual">
-                {predLabel === "human_time" ? (
+                {predLabel === "human_time" || predLabel === "crowd" ? (
                   <>
-                    Yomi predicted <b>{clock(predicted.value)}</b>. You: <b>{clock(elapsed)}</b>.{" "}
+                    {predLabel === "crowd" ? "Crowd median" : "Yomi predicted"} <b>{clock(predicted.value)}</b>. You: <b>{clock(elapsed)}</b>.{" "}
                     {elapsed <= predicted.value
                       ? `You beat it by ${Math.max(1, Math.round((predicted.value - elapsed) / 1000))}s.`
                       : `It was ahead by ${Math.max(1, Math.round((elapsed - predicted.value) / 1000))}s.`}

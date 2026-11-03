@@ -1,8 +1,8 @@
 import { puzzleMedians } from "@/lib/store";
 
-// Extreme mode needs "the typical time" for a puzzle when the model cannot give a time in milliseconds.
-// Aggregates only: puzzle id -> median and count. Slow or failing database: an empty map, and the game then
-// uses its 60 s default. Kept 30 s in the CDN and 10 s in memory.
+// The game shows "Crowd median: m:ss (N solves)" before a puzzle while the model cannot predict a time. This is where that
+// number comes from. Aggregates only: puzzle id -> median and count of solves (not players). Slow or failing database: an
+// empty map, and the game then shows no crowd median. Kept 30 s in the CDN and 10 s in memory.
 let cached: { at: number; data: Awaited<ReturnType<typeof puzzleMedians>> } | null = null;
 
 export async function GET() {

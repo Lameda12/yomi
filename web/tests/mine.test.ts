@@ -39,6 +39,14 @@ test("vsGuess and guessLine only compare a time with a time", () => {
   assert.equal(fmtClock(65_400), "1:05");
 });
 
+test("a crowd-median target reads as the crowd median, not as Yomi's guess", () => {
+  const c = { pred_unit: "ms" as const, pred_value: 40_000, model_version: "crowd-median" };
+  assert.equal(guessLine(a(c)), "The crowd median was 0:40. You took 0:30, 25% faster than it.");
+  assert.equal(guessLine(a({ ...c, pred_value: 20_000 })), "The crowd median was 0:20. You took 0:30, 50% slower than it.");
+  assert.match(guessLine(a({ ...c, pred_value: 31_000 }))!, /^The crowd median was 0:31\. You took 0:30, close to it\.$/);
+  assert.doesNotMatch(guessLine(a(c))!, /Yomi/);
+});
+
 test("the download holds the player's attempts and no anonymous id", () => {
   const mine: Mine = { attempts: [a({ solve_id: "x1" })], total: 3, puzzles: {} };
   const out = JSON.parse(exportJson(mine, "2026-10-23T12:00:00Z"));

@@ -85,6 +85,16 @@ test("liveEvaluation: only a player's first try at a puzzle counts, and only the
   assert.equal(e.points[0].actual_ms, 30_000);
 });
 
+test("liveEvaluation: a crowd-median target is not a model version, so it is neither scored nor counted as another version", () => {
+  const rows = [
+    row({ player_id: "a", pred_unit: "ms", pred_value: 20_000, model_version: "v2" }),
+    row({ player_id: "b", pred_unit: "ms", pred_value: 25_000, model_version: "crowd-median" }),
+  ];
+  const e = liveEvaluation(rows, "v2", 1, 1);
+  assert.equal(e.attempts, 1);
+  assert.equal(e.otherVersions, 0, "crowd-median rows are not 'other model versions'");
+});
+
 test("liveEvaluation: when ready, errors are medians against an always-guess-the-typical-time baseline", () => {
   const rows: SolveRow[] = [];
   for (let p = 0; p < MIN_PLAYERS; p++) for (let q = 0; q < 4; q++) rows.push(predicted(p, q, 20_000 + q * 10_000, 20_000 + q * 10_000)); // perfect guesses

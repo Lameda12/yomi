@@ -131,7 +131,7 @@ export async function getSharedSolve(solveId: string): Promise<SharedSolve | nul
   let row: (Parameters<typeof toShared>[0] & { player_id: string }) | undefined;
   if (sql) {
     const [r] = await sql`
-      select solve_id, player_id, puzzle_id, grid_size, solve_ms, backtracks, completed, mode, extreme_limit_ms, pred_value, pred_unit
+      select solve_id, player_id, puzzle_id, grid_size, solve_ms, backtracks, completed, mode, extreme_limit_ms, pred_value, pred_unit, model_version
       from solves where solve_id = ${solveId}`;
     if (r) {
       row = {
@@ -146,6 +146,7 @@ export async function getSharedSolve(solveId: string): Promise<SharedSolve | nul
         extreme_limit_ms: r.extreme_limit_ms === null ? null : Number(r.extreme_limit_ms),
         pred_value: r.pred_value === null ? null : Number(r.pred_value),
         pred_unit: r.pred_unit ?? null,
+        model_version: r.model_version ?? null,
       };
     }
   } else {

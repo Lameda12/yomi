@@ -3,6 +3,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { EffectBars, Progress, PuzzleDiagram } from "@/components/LearnParts";
+import { MIN_CROWD } from "@/lib/extreme";
 import { MIN_HUMAN_SOLVES, MIN_TRAIN_PLAYERS, dataStatus } from "@/lib/insights";
 import { FEATURE_INFO, featureEffects, improvementVerdict, labelPlain, puzzlesFittedOn, sameCoefficients, sketchPuzzle, type EvalEntry, type HistoryEntry } from "@/lib/learn";
 import { loadHistory, loadModel, puzzleFeatureTable } from "@/lib/model";
@@ -252,7 +253,12 @@ async function Learn() {
         </h2>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-sm">
           {latest?.time.eval.status !== "scored" && <li>How accurate it is. No held-out check has been run, so there is no accuracy to report.</li>}
-          {model?.trained_on.label === "solver_effort" && <li>How long people take. It predicts solver steps, so Yomi shows a relative read and not a time.</li>}
+          {model?.trained_on.label === "solver_effort" && (
+            <li>
+              How long people take. It predicts solver steps, so Yomi shows a relative read and not a time. Once a puzzle has {MIN_CROWD} finished solves, the line before the puzzle shows the typical time of
+              those solves instead (the crowd median). That is a plain median of what people took, not a prediction by the model.
+            </li>
+          )}
           <li>
             Puzzles beyond what it has seen: it was fitted on {boards(seenSizes)} boards only.
             {unseenSizes.length > 0 && <> The daily puzzles also include {boards(unseenSizes)} boards, so its guess for those is a stretch of what it learned, not something it has seen.</>}

@@ -1,6 +1,7 @@
 // Aggregate insights for the learn and stats pages. Pure functions over stored rows: no storage, no player ids in
 // anything they return. Every number here is computed from rows that exist; when there are too few rows the functions
 // say what is missing instead of returning a chart.
+import { CROWD_VERSION } from "./estimate.ts";
 import type { SolveRow } from "./store.ts";
 
 // What the training script needs before it will fit human solve time (ml/train_time.py MIN_HUMAN_SOLVES).
@@ -89,7 +90,7 @@ const absPctErr = (pred: number, actual: number) => Math.abs(pred - actual) / ac
  */
 export function liveEvaluation(rows: Rows, version: string, minPlayers = MIN_PLAYERS, minAttempts = MIN_ATTEMPTS): LiveEval {
   const mine = rows
-    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.pred_unit === "ms" && (r.pred_value ?? 0) > 0 && r.solve_ms > 0)
+    .filter((r) => r.completed && (r.mode ?? "regular") === "regular" && r.pred_unit === "ms" && (r.pred_value ?? 0) > 0 && r.solve_ms > 0 && r.model_version !== CROWD_VERSION)
     .sort((a, b) => a.id - b.id);
   const seen = new Set<string>();
   const first = mine.filter((r) => {
